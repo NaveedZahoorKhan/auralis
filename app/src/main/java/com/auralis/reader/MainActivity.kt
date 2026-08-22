@@ -625,7 +625,7 @@ private fun ModeButton(
         }
     } else {
         OutlinedButton(onClick = { onSelected(id) }, modifier = Modifier.height(40.dp)) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
         }
     }
 }
