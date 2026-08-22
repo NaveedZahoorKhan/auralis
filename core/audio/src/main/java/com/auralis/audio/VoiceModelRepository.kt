@@ -195,10 +195,10 @@ class VoiceModelRepository(
         private const val KOKORO_MODEL_BYTES = 92_361_116L
         private const val LEGACY_KOKORO_Q8F16_MODEL_BYTES = 86_033_585L
         private const val KOKORO_CONFIG_BYTES = 44L
-        private const val KOKORO_VOICE_BYTES = 524_288L
+        private const val KOKORO_VOICE_BYTES = 522_240L
         private const val KOKORO_BASE_URL = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main"
         private const val KOKORO_MODEL_URL = "$KOKORO_BASE_URL/onnx/$KOKORO_MODEL_FILE"
         private const val KOKORO_CONFIG_URL = "$KOKORO_BASE_URL/config.json"
-        private const val KOKORO_VOICE_URL = "$KOKORO_BASE_URL/voices/af.bin"
+        private const val KOKORO_VOICE_URL = "$KOKORO_BASE_URL/voices/af_heart.bin"
     }
 }

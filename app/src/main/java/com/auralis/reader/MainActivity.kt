@@ -59,8 +59,10 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
+import androidx.compose.material.icons.rounded.FirstPage
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.LastPage
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
@@ -160,6 +162,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1156,6 +1159,18 @@ private fun AudioPane(
         }
     }
 
+    fun skipToPreviousLine() {
+        if (segments.isEmpty()) return
+        val targetIdx = (activeSegmentIndex - 1).coerceAtLeast(0)
+        playSegment(targetIdx, 0L)
+    }
+
+    fun skipToNextLine() {
+        if (segments.isEmpty()) return
+        val targetIdx = (activeSegmentIndex + 1).coerceAtMost(segments.size - 1)
+        playSegment(targetIdx, 0L)
+    }
+
     DisposableEffect(bookId) {
         onDispose {
             runCatching {
@@ -1445,8 +1460,19 @@ private fun AudioPane(
                             enabled = segments.isNotEmpty()
                         ) {
                             Icon(
-                                Icons.Rounded.SkipPrevious,
+                                Icons.Rounded.FirstPage,
                                 contentDescription = "Previous Chapter",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = ::skipToPreviousLine,
+                            enabled = segments.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.Rounded.SkipPrevious,
+                                contentDescription = "Previous Line",
                                 modifier = Modifier.size(28.dp)
                             )
                         }
@@ -1485,13 +1511,24 @@ private fun AudioPane(
                         }
 
                         IconButton(
-                            onClick = ::skipToNextChapter,
+                            onClick = ::skipToNextLine,
                             enabled = segments.isNotEmpty()
                         ) {
                             Icon(
                                 Icons.Rounded.SkipNext,
-                                contentDescription = "Next Chapter",
+                                contentDescription = "Next Line",
                                 modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = ::skipToNextChapter,
+                            enabled = segments.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.Rounded.LastPage,
+                                contentDescription = "Next Chapter",
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
