@@ -1,0 +1,9 @@
+<resources>
+    <color name="auralis_seed">#2F6F68</color>
+    <color name="auralis_ink">#10201D</color>
+    <color name="auralis_teal">#2F6F68</color>
+    <color name="auralis_mint">#D6E7E1</color>
+    <color name="auralis_parchment">#F0DFBE</color>
+    <color name="auralis_rust">#9A4F3E</color>
+    <color name="launcher_background">#D6E7E1</color>
+</resources>

@@ -1,0 +1,116 @@
+package com.auralis.database
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface AuralisDao {
+    @Query("SELECT * FROM books ORDER BY updatedAtMillis DESC")
+    fun observeBooks(): Flow<List<BookEntity>>
+
+    @Query("SELECT * FROM books WHERE id = :bookId")
+    fun observeBook(bookId: String): Flow<BookEntity?>
+
+    @Query("SELECT * FROM books WHERE id = :bookId")
+    suspend fun getBook(bookId: String): BookEntity?
+
+    @Upsert
+    suspend fun upsertBook(book: BookEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChapters(chapters: List<ChapterEntity>)
+
+    @Query("SELECT * FROM chapters WHERE bookId = :bookId ORDER BY sortIndex")
+    fun observeChapters(bookId: String): Flow<List<ChapterEntity>>
+
+    @Query("SELECT * FROM chapters WHERE bookId = :bookId ORDER BY sortIndex")
+    suspend fun getChapters(bookId: String): List<ChapterEntity>
+
+    @Query("SELECT * FROM chapters WHERE id = :chapterId")
+    suspend fun getChapter(chapterId: String): ChapterEntity?
+
+    @Upsert
+    suspend fun upsertReadingPosition(position: ReadingPositionEntity)
+
+    @Query("SELECT * FROM reading_positions WHERE bookId = :bookId")
+    fun observeReadingPosition(bookId: String): Flow<ReadingPositionEntity?>
+
+    @Insert
+    suspend fun insertBookmark(bookmark: BookmarkEntity)
+
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY createdAtMillis DESC")
+    fun observeBookmarks(bookId: String): Flow<List<BookmarkEntity>>
+
+    @Insert
+    suspend fun insertHighlight(highlight: HighlightEntity)
+
+    @Query("SELECT * FROM highlights WHERE bookId = :bookId ORDER BY createdAtMillis DESC")
+    fun observeHighlights(bookId: String): Flow<List<HighlightEntity>>
+
+    @Upsert
+    suspend fun upsertMetadata(metadata: BookMetadataEntity)
+
+    @Query("SELECT * FROM book_metadata WHERE bookId = :bookId")
+    fun observeMetadata(bookId: String): Flow<BookMetadataEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCharacters(characters: List<CharacterProfileEntity>)
+
+    @Query("SELECT * FROM characters WHERE bookId = :bookId ORDER BY confidence DESC, name")
+    fun observeCharacters(bookId: String): Flow<List<CharacterProfileEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPronunciationHints(hints: List<PronunciationHintEntity>)
+
+    @Query("SELECT * FROM pronunciation_hints WHERE bookId = :bookId ORDER BY phrase")
+    fun observePronunciationHints(bookId: String): Flow<List<PronunciationHintEntity>>
+
+    @Upsert
+    suspend fun upsertVoiceModel(voiceModel: VoiceModelEntity)
+
+    @Query("SELECT * FROM voice_models ORDER BY displayName")
+    fun observeVoiceModels(): Flow<List<VoiceModelEntity>>
+
+    @Query("SELECT * FROM voice_models WHERE status = 'installed' ORDER BY updatedAtMillis DESC LIMIT 1")
+    suspend fun getDefaultInstalledVoice(): VoiceModelEntity?
+
+    @Query("SELECT * FROM voice_models WHERE id = :voiceModelId")
+    suspend fun getVoiceModel(voiceModelId: String): VoiceModelEntity?
+
+    @Upsert
+    suspend fun upsertAudiobookJob(job: AudiobookJobEntity)
+
+    @Query("SELECT * FROM audiobook_jobs WHERE bookId = :bookId ORDER BY updatedAtMillis DESC LIMIT 1")
+    fun observeLatestAudiobookJob(bookId: String): Flow<AudiobookJobEntity?>
+
+    @Query("SELECT * FROM audiobook_jobs WHERE bookId = :bookId ORDER BY updatedAtMillis DESC LIMIT 1")
+    suspend fun getLatestAudiobookJob(bookId: String): AudiobookJobEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAudioSegment(segment: AudioSegmentEntity)
+
+    @Query("SELECT * FROM audio_segments WHERE bookId = :bookId ORDER BY sortIndex")
+    fun observeAudioSegments(bookId: String): Flow<List<AudioSegmentEntity>>
+
+    @Transaction
+    suspend fun insertImportedBook(
+        book: BookEntity,
+        chapters: List<ChapterEntity>,
+        metadata: BookMetadataEntity,
+        characters: List<CharacterProfileEntity>,
+        hints: List<PronunciationHintEntity>,
+        job: AudiobookJobEntity
+    ) {
+        upsertBook(book)
+        insertChapters(chapters)
+        upsertMetadata(metadata)
+        insertCharacters(characters)
+        insertPronunciationHints(hints)
+        upsertAudiobookJob(job)
+    }
+}
