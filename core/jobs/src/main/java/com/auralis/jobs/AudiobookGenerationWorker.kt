@@ -39,7 +39,7 @@ class AudiobookGenerationWorker(
         }
 
         val planner = NarrationPlanner()
-        val engine = OnnxNaturalTtsEngine()
+        val engine = OnnxNaturalTtsEngine(applicationContext)
         var completed = 0
         val total = chapters.sumOf { chapter ->
             planner.planChapter(chapter.id, File(chapter.textPath).readText()).size.coerceAtLeast(1)

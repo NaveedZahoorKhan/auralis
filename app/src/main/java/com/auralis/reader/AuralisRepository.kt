@@ -16,6 +16,7 @@ import com.auralis.database.HighlightEntity
 import com.auralis.database.PronunciationHintEntity
 import com.auralis.database.ReadingPositionEntity
 import com.auralis.jobs.AudiobookJobScheduler
+import com.auralis.jobs.AuralisJobsScheduler
 import com.auralis.reader.core.BookImporter
 import java.io.File
 import java.util.UUID
@@ -28,7 +29,13 @@ class AuralisRepository(private val context: Context) {
     private val importer = BookImporter(context)
     private val analyzer = HeuristicBookAnalyzer()
     private val voiceRepository = VoiceModelRepository(context, dao)
+    val jobsScheduler = AuralisJobsScheduler(context)
     private val audiobookJobScheduler = AudiobookJobScheduler(context)
+
+    init {
+        // Automatically ensure periodic database progress synchronization & cache integrity
+        jobsScheduler.schedulePeriodicDatabaseSync()
+    }
 
     val books: Flow<List<BookEntity>> = dao.observeBooks()
     val voices = dao.observeVoiceModels()

@@ -3,15 +3,15 @@ package com.auralis.reader.core
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
-import com.tom_roush.pdfbox.pdmodel.PDDocument
-import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.File
 import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipInputStream
 
-class BookImporter(private val context: Context) {
+class BookImporter(
+    private val context: Context,
+    private val pdfExtractionService: PdfTextExtractionService = PdfBoxTextExtractionService(context)
+) {
     suspend fun import(uri: Uri): ImportedBook {
         val id = UUID.randomUUID().toString()
         val displayName = queryDisplayName(uri) ?: "Imported book"
@@ -66,18 +66,14 @@ class BookImporter(private val context: Context) {
     }
 
     private fun extractPdf(sourceFile: File, bookDir: File, bookId: String): ExtractionResult {
-        PDFBoxResourceLoader.init(context)
-        val text = runCatching {
-            PDDocument.load(sourceFile).use { document ->
-                val stripper = PDFTextStripper()
-                stripper.getText(document) to document.numberOfPages
-            }
+        val result = runCatching {
+            pdfExtractionService.extractRawText(sourceFile, includePerPages = false)
         }.getOrElse {
             return ExtractionResult(emptyList(), ImportStatus.Unsupported)
         }
 
-        val normalized = text.first.normalizeWhitespace()
-        if (normalized.length < 120) {
+        val normalized = result.fullText.normalizeWhitespace()
+        if (result.isScannedOrEmpty || normalized.length < 120) {
             return ExtractionResult(emptyList(), ImportStatus.NeedsOcr)
         }
 
@@ -85,7 +81,7 @@ class BookImporter(private val context: Context) {
             bookDir = bookDir,
             bookId = bookId,
             rawSections = splitIntoBookSections(normalized),
-            pageCount = text.second
+            pageCount = result.pageCount
         )
         return ExtractionResult(chapters, ImportStatus.Ready)
     }

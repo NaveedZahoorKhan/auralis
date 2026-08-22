@@ -13,6 +13,12 @@ interface AuralisDao {
     @Query("SELECT * FROM books ORDER BY updatedAtMillis DESC")
     fun observeBooks(): Flow<List<BookEntity>>
 
+    @Query("SELECT * FROM books ORDER BY updatedAtMillis DESC")
+    suspend fun getAllBooks(): List<BookEntity>
+
+    @Query("SELECT * FROM books WHERE importStatus = :status")
+    suspend fun getBooksByStatus(status: String): List<BookEntity>
+
     @Query("SELECT * FROM books WHERE id = :bookId")
     fun observeBook(bookId: String): Flow<BookEntity?>
 
@@ -39,6 +45,12 @@ interface AuralisDao {
 
     @Query("SELECT * FROM reading_positions WHERE bookId = :bookId")
     fun observeReadingPosition(bookId: String): Flow<ReadingPositionEntity?>
+
+    @Query("SELECT * FROM reading_positions WHERE bookId = :bookId")
+    suspend fun getReadingPosition(bookId: String): ReadingPositionEntity?
+
+    @Query("SELECT * FROM reading_positions")
+    suspend fun getAllReadingPositions(): List<ReadingPositionEntity>
 
     @Insert
     suspend fun insertBookmark(bookmark: BookmarkEntity)

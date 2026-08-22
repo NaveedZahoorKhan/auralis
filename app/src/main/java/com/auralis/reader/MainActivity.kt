@@ -1,7 +1,13 @@
 package com.auralis.reader
 
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -56,8 +62,13 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayCircleOutline
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolumeDown
+import androidx.compose.material.icons.rounded.VolumeMute
+import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -100,6 +111,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -544,9 +556,79 @@ private fun ReaderPane(
     onBookmark: (String, String?) -> Unit,
     onHighlight: () -> Unit
 ) {
+    val context = LocalContext.current
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var bookmarkLabel by remember { mutableStateOf("") }
     var bookmarkNote by remember { mutableStateOf("") }
+
+    // Live Read Aloud State (Android Text-To-Speech)
+    var isLiveSpeaking by remember { mutableStateOf(false) }
+    var isTtsReady by remember { mutableStateOf(false) }
+    var ttsEngine by remember { mutableStateOf<TextToSpeech?>(null) }
+
+    DisposableEffect(Unit) {
+        var instance: TextToSpeech? = null
+        instance = TextToSpeech(context.applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                instance?.language = Locale.US
+                ttsEngine = instance
+                isTtsReady = true
+                instance?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {
+                        isLiveSpeaking = true
+                    }
+                    override fun onDone(utteranceId: String?) {
+                        isLiveSpeaking = false
+                    }
+                    override fun onError(utteranceId: String?) {
+                        isLiveSpeaking = false
+                    }
+                })
+            }
+        }
+        onDispose {
+            instance?.stop()
+            instance?.shutdown()
+            ttsEngine = null
+            isLiveSpeaking = false
+            isTtsReady = false
+        }
+    }
+
+    // Stop speaking when switching chapters
+    LaunchedEffect(chapterIndex) {
+        if (isLiveSpeaking) {
+            ttsEngine?.stop()
+            isLiveSpeaking = false
+        }
+    }
+
+    fun toggleLiveReadAloud() {
+        val engine = ttsEngine ?: return
+        if (isLiveSpeaking) {
+            engine.stop()
+            isLiveSpeaking = false
+        } else {
+            if (text.isNotBlank()) {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                val currentVol = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
+                if (currentVol == 0 && audioManager != null) {
+                    val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (maxVol * 0.75f).toInt().coerceAtLeast(1), 0)
+                }
+
+                val params = Bundle().apply {
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                }
+                val chunks = text.chunked(2500)
+                chunks.forEachIndexed { index, chunk ->
+                    val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                    engine.speak(chunk, queueMode, params, "live_reader_$index")
+                }
+                isLiveSpeaking = true
+            }
+        }
+    }
 
     if (showBookmarkDialog && chapter != null) {
         AlertDialog(
@@ -597,7 +679,7 @@ private fun ReaderPane(
             }
             OutlinedButton(onClick = onNext, enabled = chapterIndex < chapterCount - 1) { Text("Next") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             FilledTonalButton(
                 onClick = {
                     bookmarkLabel = chapter?.title ?: "Chapter ${chapterIndex + 1}"
@@ -611,7 +693,49 @@ private fun ReaderPane(
                 Text("Bookmark")
             }
             FilledTonalButton(onClick = onHighlight, enabled = chapter != null) { Text("Highlight") }
+
+            Spacer(Modifier.weight(1f))
+
+            // Instant Live Read Aloud Button
+            Button(
+                onClick = ::toggleLiveReadAloud,
+                enabled = isTtsReady && text.isNotBlank()
+            ) {
+                Icon(
+                    if (isLiveSpeaking) Icons.Rounded.Stop else Icons.Rounded.RecordVoiceOver,
+                    contentDescription = if (isLiveSpeaking) "Stop Narration" else "Read Aloud",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(if (isLiveSpeaking) "Stop Speaking" else "Read Aloud")
+            }
         }
+
+        if (isLiveSpeaking) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MiniEqualizerBars(isPlaying = true, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "Reading chapter aloud with live voice synthesizer...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { ttsEngine?.stop(); isLiveSpeaking = false }) {
+                        Icon(Icons.Rounded.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+
         Column(
             Modifier
                 .fillMaxSize()
@@ -646,6 +770,15 @@ private fun AudioPane(
     onInstallVoice: () -> Unit,
     onPrepare: () -> Unit
 ) {
+    val context = LocalContext.current
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
+    val maxDeviceVolume = remember { audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15 }
+    var deviceVolume by remember {
+        mutableFloatStateOf(
+            ((audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 10).toFloat() / maxDeviceVolume.toFloat()).coerceIn(0f, 1f)
+        )
+    }
+
     val installedVoice = voices.firstOrNull { it.status == "installed" }
     val isDownloading = voices.any { it.status == "downloading" }
     val synthesisReady = installedVoice != null
@@ -660,21 +793,53 @@ private fun AudioPane(
     var currentPositionMillis by rememberSaveable(bookId) { mutableLongStateOf(0L) }
     var isPlaying by remember { mutableStateOf(false) }
     var isSeeking by remember { mutableStateOf(false) }
+    var playbackErrorMessage by remember { mutableStateOf<String?>(null) }
     var showAddBookmarkDialog by remember { mutableStateOf(false) }
     var bookmarkLabel by remember { mutableStateOf("") }
     var bookmarkNote by remember { mutableStateOf("") }
-    val player = remember { MediaPlayer() }
+
+    val player = remember {
+        MediaPlayer().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            setVolume(1.0f, 1.0f)
+        }
+    }
     val latestOnSavePosition by rememberUpdatedState(onSavePosition)
 
     val activeSegment = segments.getOrNull(activeSegmentIndex.coerceIn(0, (segments.size - 1).coerceAtLeast(0)))
     val activeSegmentDuration = activeSegment?.durationMillis?.coerceAtLeast(1000L) ?: 1000L
 
+    fun ensureAudibleVolume() {
+        audioManager?.let { am ->
+            val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (cur <= 1) {
+                val target = (maxDeviceVolume * 0.75f).toInt().coerceAtLeast(2)
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+                deviceVolume = target.toFloat() / maxDeviceVolume.toFloat()
+            }
+        }
+    }
+
     fun playSegment(index: Int, startPositionMillis: Long = 0L) {
         if (index !in segments.indices) return
         val segment = segments[index]
         activeSegmentIndex = index
+        playbackErrorMessage = null
         runCatching {
+            ensureAudibleVolume()
             player.reset()
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            player.setVolume(1.0f, 1.0f)
             player.setDataSource(segment.filePath)
             player.prepare()
             if (startPositionMillis > 0 && startPositionMillis < (segment.durationMillis - 250)) {
@@ -695,8 +860,14 @@ private fun AudioPane(
                     latestOnSavePosition(activeSegmentIndex, currentPositionMillis, segment.chapterId)
                 }
             }
-        }.onFailure {
+            player.setOnErrorListener { _, what, extra ->
+                isPlaying = false
+                playbackErrorMessage = "Playback error ($what, $extra)"
+                true
+            }
+        }.onFailure { ex ->
             isPlaying = false
+            playbackErrorMessage = "Unable to play audio: ${ex.message}"
         }
     }
 
@@ -747,6 +918,7 @@ private fun AudioPane(
             currentPositionMillis = currentPos
             latestOnSavePosition(activeSegmentIndex, currentPos, activeSegment?.chapterId)
         } else {
+            ensureAudibleVolume()
             if (player.currentPosition > 0 && activeSegmentIndex in segments.indices) {
                 player.start()
                 isPlaying = true
@@ -873,6 +1045,10 @@ private fun AudioPane(
         if (!jobError.isNullOrBlank()) {
             Text(jobError, color = MaterialTheme.colorScheme.error)
         }
+        if (!playbackErrorMessage.isNullOrBlank()) {
+            Text(playbackErrorMessage!!, color = MaterialTheme.colorScheme.error)
+        }
+
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(onClick = onInstallVoice) {
                 Icon(Icons.Rounded.Mic, contentDescription = null)
@@ -886,10 +1062,63 @@ private fun AudioPane(
                     when {
                         installedVoice == null -> "Install voice first"
                         job?.status == "running" -> "Restarting..."
-                        job?.status == "complete" -> "Regenerate"
+                        job?.status == "complete" -> "Regenerate Audio"
                         else -> "Generate Audio"
                     }
                 )
+            }
+        }
+
+        // Volume Level & Audio Output Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
+            Row(
+                Modifier
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = when {
+                        deviceVolume <= 0.01f -> Icons.Rounded.VolumeOff
+                        deviceVolume < 0.5f -> Icons.Rounded.VolumeDown
+                        else -> Icons.Rounded.VolumeUp
+                    },
+                    contentDescription = "Volume",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    "Volume: ${(deviceVolume * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Slider(
+                    value = deviceVolume,
+                    onValueChange = { newVol ->
+                        deviceVolume = newVol
+                        audioManager?.let { am ->
+                            val streamVol = (newVol * maxDeviceVolume).toInt().coerceIn(0, maxDeviceVolume)
+                            am.setStreamVolume(AudioManager.STREAM_MUSIC, streamVol, 0)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                if (deviceVolume <= 0.01f) {
+                    TextButton(
+                        onClick = {
+                            val target = (maxDeviceVolume * 0.8f).toInt().coerceAtLeast(2)
+                            audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+                            deviceVolume = target.toFloat() / maxDeviceVolume.toFloat()
+                        }
+                    ) {
+                        Text("Unmute", fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
 

@@ -9,21 +9,9 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 
 class AudiobookJobScheduler(private val context: Context) {
-    fun enqueue(bookId: String) {
-        val request = OneTimeWorkRequestBuilder<AudiobookGenerationWorker>()
-            .setInputData(workDataOf(AudiobookGenerationWorker.KEY_BOOK_ID to bookId))
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiresBatteryNotLow(true)
-                    .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
-                    .build()
-            )
-            .build()
+    private val delegate = AuralisJobsScheduler(context)
 
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "audiobook-$bookId",
-            ExistingWorkPolicy.REPLACE,
-            request
-        )
+    fun enqueue(bookId: String) {
+        delegate.enqueueAudiobookGeneration(bookId)
     }
 }

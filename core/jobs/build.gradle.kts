@@ -23,6 +23,8 @@ android {
 
 dependencies {
     implementation(project(":core:database"))
+    implementation(project(":core:reader"))
+    implementation(project(":core:ai"))
     implementation(project(":core:audio"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.work.runtime.ktx)
