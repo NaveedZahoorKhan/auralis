@@ -6,9 +6,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,17 +40,26 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -48,11 +67,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -79,13 +100,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
+import kotlin.math.sin
 import com.auralis.database.AudioPlaybackPositionEntity
 import com.auralis.database.AudioSegmentEntity
 import com.auralis.database.AudiobookJobEntity
@@ -103,36 +131,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repository = AuralisRepository(applicationContext)
+        val themePreferencesManager = ThemePreferencesManager.get(applicationContext)
         setContent {
-            AuralisTheme {
+            AuralisThemeProvider(themePreferencesManager) {
                 AuralisApp(repository)
             }
-        }
-    }
-}
-
-@Composable
-private fun AuralisTheme(content: @Composable () -> Unit) {
-    val colors = lightColorScheme(
-        primary = Color(0xFF2F6F68),
-        onPrimary = Color.White,
-        primaryContainer = Color(0xFFD6E7E1),
-        onPrimaryContainer = Color(0xFF10201D),
-        secondary = Color(0xFF756144),
-        onSecondary = Color.White,
-        secondaryContainer = Color(0xFFF0DFBE),
-        tertiary = Color(0xFF9A4F3E),
-        onTertiary = Color.White,
-        tertiaryContainer = Color(0xFFFFDAD1),
-        surface = Color(0xFFFAFBF8),
-        surfaceVariant = Color(0xFFE1E7DF),
-        background = Color(0xFFFAFBF8),
-        error = Color(0xFFB3261E)
-    )
-
-    MaterialTheme(colorScheme = colors) {
-        Surface(Modifier.fillMaxSize(), color = colors.background) {
-            content()
         }
     }
 }
@@ -222,6 +225,7 @@ private fun LibraryScreen(
                     }
                 },
                 actions = {
+                    ThemeActionIconButton()
                     IconButton(onClick = onInstallVoice) {
                         Icon(Icons.Rounded.Mic, contentDescription = "Install voice")
                     }
@@ -337,8 +341,8 @@ private fun BookRow(book: BookEntity, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     ) {
         Row(
             Modifier.padding(16.dp),
@@ -380,6 +384,7 @@ private fun BookScreen(
     val audioPlaybackPosition by repository.observeAudioPlaybackPosition(bookId).collectAsState(initial = null)
     var mode by rememberSaveable { mutableStateOf("read") }
     var chapterIndex by rememberSaveable(bookId) { mutableIntStateOf(0) }
+    var audioJumpTarget by remember { mutableStateOf<Pair<Int, Long>?>(null) }
 
     val selectedChapter = chapters.getOrNull(chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)))
     LaunchedEffect(selectedChapter?.id) {
@@ -401,6 +406,7 @@ private fun BookScreen(
                     }
                 },
                 actions = {
+                    ThemeActionIconButton()
                     IconButton(onClick = { mode = "search" }) {
                         Icon(Icons.Rounded.Search, contentDescription = "Search")
                     }
@@ -428,16 +434,49 @@ private fun BookScreen(
                     chapters = chapters,
                     voices = voices,
                     savedPosition = audioPlaybackPosition,
+                    audioBookmarks = bookmarks.filter { it.type == "audio" },
+                    jumpTarget = audioJumpTarget,
+                    onJumpHandled = { audioJumpTarget = null },
                     onSavePosition = { segIdx, posMillis, chapId ->
                         scope.launch {
                             repository.saveAudioPlaybackPosition(bookId, segIdx, posMillis, chapId)
+                        }
+                    },
+                    onAddAudioBookmark = { segIdx, posMillis, chapId, label, note ->
+                        scope.launch {
+                            repository.addAudioBookmark(bookId, chapId, segIdx, posMillis, label, note)
+                        }
+                    },
+                    onDeleteBookmark = { bookmarkId ->
+                        scope.launch {
+                            repository.deleteBookmark(bookmarkId)
                         }
                     },
                     onInstallVoice = onInstallVoice,
                     onPrepare = { repository.prepareAudiobook(bookId) }
                 )
                 "details" -> DetailsPane(metadata, characters)
-                "notes" -> NotesPane(bookmarks, highlights)
+                "notes" -> NotesPane(
+                    bookmarks = bookmarks,
+                    highlights = highlights,
+                    chapters = chapters,
+                    onSelectAudioBookmark = { bookmark ->
+                        audioJumpTarget = Pair(bookmark.segmentIndex ?: 0, bookmark.audioTimestampMillis ?: 0L)
+                        mode = "audio"
+                    },
+                    onSelectTextBookmark = { bookmark ->
+                        val targetChapterIdx = chapters.indexOfFirst { it.id == bookmark.chapterId }
+                        if (targetChapterIdx >= 0) {
+                            chapterIndex = targetChapterIdx
+                        }
+                        mode = "read"
+                    },
+                    onDeleteBookmark = { bookmarkId ->
+                        scope.launch {
+                            repository.deleteBookmark(bookmarkId)
+                        }
+                    }
+                )
                 "search" -> SearchPane(chapters, repository)
                 else -> ReaderPane(
                     chapter = selectedChapter,
@@ -446,9 +485,9 @@ private fun BookScreen(
                     text = selectedChapter?.let(repository::readChapterText).orEmpty(),
                     onPrevious = { chapterIndex = (chapterIndex - 1).coerceAtLeast(0) },
                     onNext = { chapterIndex = (chapterIndex + 1).coerceAtMost((chapters.size - 1).coerceAtLeast(0)) },
-                    onBookmark = {
+                    onBookmark = { label, note ->
                         selectedChapter?.let { chapter ->
-                            scope.launch { repository.addBookmark(bookId, chapter.id, chapter.title) }
+                            scope.launch { repository.addBookmark(bookId, chapter.id, label, note) }
                         }
                     },
                     onHighlight = {
@@ -502,9 +541,53 @@ private fun ReaderPane(
     text: String,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    onBookmark: () -> Unit,
+    onBookmark: (String, String?) -> Unit,
     onHighlight: () -> Unit
 ) {
+    var showBookmarkDialog by remember { mutableStateOf(false) }
+    var bookmarkLabel by remember { mutableStateOf("") }
+    var bookmarkNote by remember { mutableStateOf("") }
+
+    if (showBookmarkDialog && chapter != null) {
+        AlertDialog(
+            onDismissRequest = { showBookmarkDialog = false },
+            title = { Text("Bookmark Chapter") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = bookmarkLabel,
+                        onValueChange = { bookmarkLabel = it },
+                        label = { Text("Label") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = bookmarkNote,
+                        onValueChange = { bookmarkNote = it },
+                        label = { Text("Note (Optional)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalLabel = bookmarkLabel.ifBlank { chapter.title }
+                        onBookmark(finalLabel, bookmarkNote.ifBlank { null })
+                        showBookmarkDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBookmarkDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(onClick = onPrevious, enabled = chapterIndex > 0) { Text("Previous") }
@@ -515,7 +598,18 @@ private fun ReaderPane(
             OutlinedButton(onClick = onNext, enabled = chapterIndex < chapterCount - 1) { Text("Next") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilledTonalButton(onClick = onBookmark, enabled = chapter != null) { Text("Bookmark") }
+            FilledTonalButton(
+                onClick = {
+                    bookmarkLabel = chapter?.title ?: "Chapter ${chapterIndex + 1}"
+                    bookmarkNote = ""
+                    showBookmarkDialog = true
+                },
+                enabled = chapter != null
+            ) {
+                Icon(Icons.Rounded.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Bookmark")
+            }
             FilledTonalButton(onClick = onHighlight, enabled = chapter != null) { Text("Highlight") }
         }
         Column(
@@ -543,7 +637,12 @@ private fun AudioPane(
     chapters: List<ChapterEntity>,
     voices: List<VoiceModelEntity>,
     savedPosition: AudioPlaybackPositionEntity?,
+    audioBookmarks: List<BookmarkEntity>,
+    jumpTarget: Pair<Int, Long>?,
+    onJumpHandled: () -> Unit,
     onSavePosition: (Int, Long, String?) -> Unit,
+    onAddAudioBookmark: (Int, Long, String?, String, String?) -> Unit,
+    onDeleteBookmark: (Long) -> Unit,
     onInstallVoice: () -> Unit,
     onPrepare: () -> Unit
 ) {
@@ -561,40 +660,14 @@ private fun AudioPane(
     var currentPositionMillis by rememberSaveable(bookId) { mutableLongStateOf(0L) }
     var isPlaying by remember { mutableStateOf(false) }
     var isSeeking by remember { mutableStateOf(false) }
-    var sliderValue by remember { mutableFloatStateOf(0f) }
+    var showAddBookmarkDialog by remember { mutableStateOf(false) }
+    var bookmarkLabel by remember { mutableStateOf("") }
+    var bookmarkNote by remember { mutableStateOf("") }
     val player = remember { MediaPlayer() }
     val latestOnSavePosition by rememberUpdatedState(onSavePosition)
 
-    // Automatically restore saved playback position on first load
-    var hasRestoredSavedPosition by rememberSaveable(bookId) { mutableStateOf(false) }
-    LaunchedEffect(savedPosition, segments) {
-        if (!hasRestoredSavedPosition && savedPosition != null && segments.isNotEmpty()) {
-            if (savedPosition.segmentIndex in segments.indices) {
-                activeSegmentIndex = savedPosition.segmentIndex
-                currentPositionMillis = savedPosition.positionMillis
-            }
-            hasRestoredSavedPosition = true
-        }
-    }
-
     val activeSegment = segments.getOrNull(activeSegmentIndex.coerceIn(0, (segments.size - 1).coerceAtLeast(0)))
     val activeSegmentDuration = activeSegment?.durationMillis?.coerceAtLeast(1000L) ?: 1000L
-
-    // Progress updater loop while playing - saves to Room periodically
-    LaunchedEffect(isPlaying, activeSegmentIndex) {
-        while (isPlaying) {
-            runCatching {
-                if (player.isPlaying) {
-                    val pos = player.currentPosition.toLong()
-                    if (!isSeeking) {
-                        currentPositionMillis = pos
-                    }
-                    latestOnSavePosition(activeSegmentIndex, pos, activeSegment?.chapterId)
-                }
-            }
-            delay(1000)
-        }
-    }
 
     fun playSegment(index: Int, startPositionMillis: Long = 0L) {
         if (index !in segments.indices) return
@@ -624,6 +697,44 @@ private fun AudioPane(
             }
         }.onFailure {
             isPlaying = false
+        }
+    }
+
+    // Handle jump target from bookmark selection
+    LaunchedEffect(jumpTarget) {
+        jumpTarget?.let { (targetSegment, targetMillis) ->
+            if (targetSegment in segments.indices) {
+                playSegment(targetSegment, targetMillis)
+                onJumpHandled()
+            }
+        }
+    }
+
+    // Automatically restore saved playback position on first load
+    var hasRestoredSavedPosition by rememberSaveable(bookId) { mutableStateOf(false) }
+    LaunchedEffect(savedPosition, segments) {
+        if (!hasRestoredSavedPosition && savedPosition != null && segments.isNotEmpty()) {
+            if (savedPosition.segmentIndex in segments.indices) {
+                activeSegmentIndex = savedPosition.segmentIndex
+                currentPositionMillis = savedPosition.positionMillis
+            }
+            hasRestoredSavedPosition = true
+        }
+    }
+
+    // Progress updater loop while playing - saves to Room periodically
+    LaunchedEffect(isPlaying, activeSegmentIndex) {
+        while (isPlaying) {
+            runCatching {
+                if (player.isPlaying) {
+                    val pos = player.currentPosition.toLong()
+                    if (!isSeeking) {
+                        currentPositionMillis = pos
+                    }
+                    latestOnSavePosition(activeSegmentIndex, pos, activeSegment?.chapterId)
+                }
+            }
+            delay(1000)
         }
     }
 
@@ -664,6 +775,60 @@ private fun AudioPane(
                 player.release()
             }
         }
+    }
+
+    if (showAddBookmarkDialog) {
+        val currentChapter = chapters.firstOrNull { it.id == activeSegment?.chapterId }
+        AlertDialog(
+            onDismissRequest = { showAddBookmarkDialog = false },
+            title = { Text("Add Audio Bookmark") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Track ${activeSegmentIndex + 1} • ${formatAudioTime(currentPositionMillis)}" + (currentChapter?.let { " (${it.title})" } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    OutlinedTextField(
+                        value = bookmarkLabel,
+                        onValueChange = { bookmarkLabel = it },
+                        label = { Text("Bookmark Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = bookmarkNote,
+                        onValueChange = { bookmarkNote = it },
+                        label = { Text("Note / Thought (Optional)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val defaultLabel = currentChapter?.let { "${it.title} - ${formatAudioTime(currentPositionMillis)}" }
+                            ?: "Track ${activeSegmentIndex + 1} (${formatAudioTime(currentPositionMillis)})"
+                        val finalLabel = bookmarkLabel.ifBlank { defaultLabel }
+                        onAddAudioBookmark(
+                            activeSegmentIndex,
+                            currentPositionMillis,
+                            activeSegment?.chapterId,
+                            finalLabel,
+                            bookmarkNote.ifBlank { null }
+                        )
+                        showAddBookmarkDialog = false
+                    }
+                ) {
+                    Text("Save Bookmark")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddBookmarkDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Column(
@@ -803,37 +968,141 @@ private fun AudioPane(
                         }
                     }
 
-                    // Scrubber Slider
-                    val effectiveFraction = if (isSeeking) {
-                        sliderValue
-                    } else {
-                        (currentPositionMillis.toFloat() / activeSegmentDuration.toFloat()).coerceIn(0f, 1f)
-                    }
-
-                    Slider(
-                        value = effectiveFraction,
-                        onValueChange = { frac ->
-                            isSeeking = true
-                            sliderValue = frac
-                        },
-                        onValueChangeFinished = {
-                            val targetMillis = (sliderValue * activeSegmentDuration).toLong()
-                            isSeeking = false
-                            seekToMillis(targetMillis)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary
-                        )
+                    // Waveform Visualizer
+                    WaveformVisualizer(
+                        segmentId = activeSegment?.id ?: "default",
+                        currentPositionMillis = currentPositionMillis,
+                        totalDurationMillis = activeSegmentDuration,
+                        isPlaying = isPlaying,
+                        onSeek = { seekToMillis(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(84.dp)
+                            .padding(vertical = 4.dp)
                     )
 
                     Row(
                         Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(formatAudioTime(currentPositionMillis), style = MaterialTheme.typography.labelSmall)
-                        Text(formatAudioTime(activeSegmentDuration), style = MaterialTheme.typography.labelSmall)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (isPlaying) {
+                                MiniEqualizerBars(isPlaying = true, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(
+                                if (isPlaying) "Narrating • ${formatAudioTime(currentPositionMillis)}" else formatAudioTime(currentPositionMillis),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "-${formatAudioTime((activeSegmentDuration - currentPositionMillis).coerceAtLeast(0L))}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(
+                                onClick = {
+                                    val defLabel = currentChapter?.let { "${it.title} - ${formatAudioTime(currentPositionMillis)}" }
+                                        ?: "Track ${activeSegmentIndex + 1} (${formatAudioTime(currentPositionMillis)})"
+                                    bookmarkLabel = defLabel
+                                    bookmarkNote = ""
+                                    showAddBookmarkDialog = true
+                                }
+                            ) {
+                                Icon(Icons.Rounded.BookmarkAdd, contentDescription = "Add bookmark", modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Bookmark", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Audio Bookmarks section
+            if (audioBookmarks.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Audio Bookmarks (${audioBookmarks.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                audioBookmarks.forEach { bookmark ->
+                    val bookmarkChapter = chapters.firstOrNull { it.id == bookmark.chapterId }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                    ) {
+                        Row(
+                            Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(36.dp)
+                                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Bookmark,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = bookmark.label,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Track ${(bookmark.segmentIndex ?: 0) + 1} • ${formatAudioTime(bookmark.audioTimestampMillis ?: 0L)}" +
+                                            (bookmarkChapter?.let { " • ${it.title}" } ?: ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                val bookmarkNoteText = bookmark.note
+                                if (!bookmarkNoteText.isNullOrBlank()) {
+                                    Text(
+                                        text = bookmarkNoteText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    playSegment(bookmark.segmentIndex ?: 0, bookmark.audioTimestampMillis ?: 0L)
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Rounded.PlayCircleOutline,
+                                    contentDescription = "Jump to bookmark",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            IconButton(
+                                onClick = { onDeleteBookmark(bookmark.id) }
+                            ) {
+                                Icon(
+                                    Icons.Rounded.DeleteOutline,
+                                    contentDescription = "Delete bookmark",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -859,11 +1128,15 @@ private fun AudioPane(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isCurrent && isPlaying) Icons.Rounded.VolumeUp else Icons.Rounded.PlayArrow,
-                            contentDescription = null,
-                            tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
+                        if (isCurrent && isPlaying) {
+                            MiniEqualizerBars(isPlaying = true, color = MaterialTheme.colorScheme.primary)
+                        } else {
+                            Icon(
+                                imageVector = if (isCurrent) Icons.Rounded.VolumeUp else Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         Column(Modifier.weight(1f)) {
                             Text(
                                 text = chapter?.title ?: "Segment ${idx + 1}",
@@ -879,6 +1152,165 @@ private fun AudioPane(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WaveformVisualizer(
+    segmentId: String,
+    currentPositionMillis: Long,
+    totalDurationMillis: Long,
+    isPlaying: Boolean,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "waveform_pulse")
+    val pulsePhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1400, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "phase"
+    )
+
+    val playedFraction = (currentPositionMillis.toFloat() / totalDurationMillis.coerceAtLeast(1000L).toFloat()).coerceIn(0f, 1f)
+
+    // Deterministic base amplitude pattern from segmentId
+    val sampleCount = 48
+    val baseAmplitudes = remember(segmentId) {
+        val hash = abs(segmentId.hashCode())
+        val random = java.util.Random(hash.toLong())
+        FloatArray(sampleCount) { i ->
+            val factor = 0.2f + 0.8f * random.nextFloat()
+            val posRatio = i.toFloat() / sampleCount.toFloat()
+            val envelope = sin(posRatio * Math.PI.toFloat()).coerceAtLeast(0.35f)
+            (factor * envelope).coerceIn(0.18f, 1.0f)
+        }
+    }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.tertiary
+    val inactiveColor = MaterialTheme.colorScheme.surfaceTint.copy(alpha = 0.25f)
+    val backgroundTrackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+
+    Box(
+        modifier = modifier
+            .background(backgroundTrackColor, RoundedCornerShape(12.dp))
+            .pointerInput(totalDurationMillis, onSeek) {
+                detectTapGestures { offset ->
+                    val frac = (offset.x / size.width).coerceIn(0f, 1f)
+                    onSeek((frac * totalDurationMillis).toLong())
+                }
+            }
+            .pointerInput(totalDurationMillis, onSeek) {
+                detectDragGestures { change, _ ->
+                    change.consume()
+                    val frac = (change.position.x / size.width).coerceIn(0f, 1f)
+                    onSeek((frac * totalDurationMillis).toLong())
+                }
+            }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val canvasWidth = size.width
+            val canvasHeight = size.height
+            val barSpacing = 3.dp.toPx()
+            val totalSpacing = barSpacing * (sampleCount - 1)
+            val barWidth = ((canvasWidth - totalSpacing) / sampleCount).coerceAtLeast(2.dp.toPx())
+            val minBarHeight = 6.dp.toPx()
+            val maxBarHeight = canvasHeight * 0.88f
+            val centerY = canvasHeight / 2f
+            val playheadX = canvasWidth * playedFraction
+
+            for (i in 0 until sampleCount) {
+                val x = i * (barWidth + barSpacing)
+                val baseAmp = baseAmplitudes[i]
+
+                // Live dynamic talking/narration animation
+                val dynamicAmp = if (isPlaying) {
+                    val distToPlayhead = abs(x - playheadX) / canvasWidth
+                    val waveInfluence = (1f - distToPlayhead * 2f).coerceIn(0f, 1f)
+                    val modulation = 0.15f * sin(pulsePhase + i * 0.45f) + 0.10f * sin(pulsePhase * 2f + i * 0.9f)
+                    (baseAmp + modulation * (0.4f + 0.6f * waveInfluence)).coerceIn(0.12f, 1.0f)
+                } else {
+                    baseAmp
+                }
+
+                val currentBarHeight = (minBarHeight + (maxBarHeight - minBarHeight) * dynamicAmp)
+                val top = centerY - currentBarHeight / 2f
+
+                val isPlayed = (x + barWidth / 2f) <= playheadX
+                val barColor = if (isPlayed) {
+                    if (isPlaying && (x >= playheadX - barWidth * 3 && x <= playheadX)) secondaryColor else primaryColor
+                } else {
+                    inactiveColor
+                }
+
+                drawRoundRect(
+                    color = barColor,
+                    topLeft = Offset(x, top),
+                    size = Size(barWidth, currentBarHeight),
+                    cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
+                )
+            }
+
+            // Draw Playhead line & glowing cursor dot
+            drawLine(
+                color = primaryColor,
+                start = Offset(playheadX, 0f),
+                end = Offset(playheadX, canvasHeight),
+                strokeWidth = 2.5.dp.toPx()
+            )
+
+            drawCircle(
+                color = if (isPlaying) secondaryColor else primaryColor,
+                radius = if (isPlaying) 5.dp.toPx() else 4.dp.toPx(),
+                center = Offset(playheadX, centerY)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiniEqualizerBars(
+    isPlaying: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "mini_eq")
+    val bar1 by infiniteTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "b1"
+    )
+    val bar2 by infiniteTransition.animateFloat(
+        initialValue = 0.8f, targetValue = 0.2f,
+        animationSpec = infiniteRepeatable(tween(560, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "b2"
+    )
+    val bar3 by infiniteTransition.animateFloat(
+        initialValue = 0.4f, targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "b3"
+    )
+
+    Row(
+        modifier = modifier.size(width = 16.dp, height = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        val bars = if (isPlaying) listOf(bar1, bar2, bar3) else listOf(0.4f, 0.4f, 0.4f)
+        bars.forEach { fraction ->
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height((14 * fraction).dp.coerceAtLeast(3.dp))
+                    .background(color, RoundedCornerShape(1.dp))
+            )
         }
     }
 }
@@ -955,23 +1387,322 @@ private fun CharacterRow(character: CharacterProfileEntity) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NotesPane(
     bookmarks: List<BookmarkEntity>,
-    highlights: List<HighlightEntity>
+    highlights: List<HighlightEntity>,
+    chapters: List<ChapterEntity>,
+    onSelectAudioBookmark: (BookmarkEntity) -> Unit,
+    onSelectTextBookmark: (BookmarkEntity) -> Unit,
+    onDeleteBookmark: (Long) -> Unit
 ) {
+    var selectedFilter by rememberSaveable { mutableStateOf("all") }
+    val audioBookmarks = remember(bookmarks) { bookmarks.filter { it.type == "audio" } }
+    val textBookmarks = remember(bookmarks) { bookmarks.filter { it.type != "audio" } }
+
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("Bookmarks", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (bookmarks.isEmpty()) Text("None")
-        bookmarks.forEach { Text(it.label, style = MaterialTheme.typography.bodyLarge) }
-        Text("Highlights", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (highlights.isEmpty()) Text("None")
-        highlights.forEach { Text(it.note ?: it.colorName, style = MaterialTheme.typography.bodyLarge) }
+        // Filter Chips
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selectedFilter == "all",
+                onClick = { selectedFilter = "all" },
+                label = { Text("All (${bookmarks.size + highlights.size})") }
+            )
+            FilterChip(
+                selected = selectedFilter == "audio",
+                onClick = { selectedFilter = "audio" },
+                label = { Text("Audio (${audioBookmarks.size})") },
+                leadingIcon = { Icon(Icons.Rounded.Headphones, contentDescription = null, modifier = Modifier.size(16.dp)) }
+            )
+            FilterChip(
+                selected = selectedFilter == "text",
+                onClick = { selectedFilter = "text" },
+                label = { Text("Reader (${textBookmarks.size})") },
+                leadingIcon = { Icon(Icons.Rounded.Book, contentDescription = null, modifier = Modifier.size(16.dp)) }
+            )
+            FilterChip(
+                selected = selectedFilter == "highlights",
+                onClick = { selectedFilter = "highlights" },
+                label = { Text("Highlights (${highlights.size})") }
+            )
+        }
+
+        // Audio Bookmarks section
+        if (selectedFilter == "all" || selectedFilter == "audio") {
+            if (audioBookmarks.isNotEmpty() || selectedFilter == "audio") {
+                Text(
+                    "Audio Bookmarks (${audioBookmarks.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (audioBookmarks.isEmpty()) {
+                    Text(
+                        "No audio bookmarks yet. Tap the bookmark icon while playing audio to save a timestamp.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    audioBookmarks.forEach { bookmark ->
+                        val chapter = chapters.firstOrNull { it.id == bookmark.chapterId }
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(36.dp)
+                                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Headphones,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = bookmark.label,
+                                            fontWeight = FontWeight.SemiBold,
+                                            style = MaterialTheme.typography.titleSmall
+                                        )
+                                        Text(
+                                            text = "Track ${(bookmark.segmentIndex ?: 0) + 1} • ${formatAudioTime(bookmark.audioTimestampMillis ?: 0L)}" +
+                                                    (chapter?.let { " • ${it.title}" } ?: ""),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    IconButton(onClick = { onDeleteBookmark(bookmark.id) }) {
+                                        Icon(
+                                            Icons.Rounded.DeleteOutline,
+                                            contentDescription = "Delete bookmark",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+
+                                val audioNoteText = bookmark.note
+                                if (!audioNoteText.isNullOrBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = audioNoteText,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = { onSelectAudioBookmark(bookmark) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Listen from ${formatAudioTime(bookmark.audioTimestampMillis ?: 0L)}")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Reader Bookmarks section
+        if (selectedFilter == "all" || selectedFilter == "text") {
+            if (textBookmarks.isNotEmpty() || selectedFilter == "text") {
+                Text(
+                    "Reader Bookmarks (${textBookmarks.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (textBookmarks.isEmpty()) {
+                    Text(
+                        "No reader bookmarks yet. Tap the bookmark button in reading mode.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    textBookmarks.forEach { bookmark ->
+                        val chapter = chapters.firstOrNull { it.id == bookmark.chapterId }
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(36.dp)
+                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(8.dp)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Book,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = bookmark.label,
+                                            fontWeight = FontWeight.SemiBold,
+                                            style = MaterialTheme.typography.titleSmall
+                                        )
+                                        Text(
+                                            text = chapter?.title ?: "Chapter Bookmark",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                    IconButton(onClick = { onDeleteBookmark(bookmark.id) }) {
+                                        Icon(
+                                            Icons.Rounded.DeleteOutline,
+                                            contentDescription = "Delete bookmark",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+
+                                val textNoteText = bookmark.note
+                                if (!textNoteText.isNullOrBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = textNoteText,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = { onSelectTextBookmark(bookmark) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.AutoStories, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Open Chapter")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Highlights section
+        if (selectedFilter == "all" || selectedFilter == "highlights") {
+            if (highlights.isNotEmpty() || selectedFilter == "highlights") {
+                Text(
+                    "Highlights (${highlights.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (highlights.isEmpty()) {
+                    Text(
+                        "No highlights yet. Tap highlight while reading to capture key passages.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    highlights.forEach { highlight ->
+                        val chapter = chapters.firstOrNull { it.id == highlight.chapterId }
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = highlight.note ?: "Highlight in ${chapter?.title ?: "Chapter"}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = chapter?.title ?: "Passage",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bookmarks.isEmpty() && highlights.isEmpty()) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.BookmarkAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        "No bookmarks or notes yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Create audio or reader bookmarks to easily jump back to favorite moments.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -996,7 +1727,7 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        androidx.compose.material3.OutlinedTextField(
+        OutlinedTextField(
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
@@ -1010,3 +1741,131 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
         }
     }
 }
+
+@Composable
+fun ThemeActionIconButton() {
+    val themeController = LocalThemeController.current
+    var showDialog by remember { mutableStateOf(false) }
+
+    IconButton(onClick = { showDialog = true }) {
+        val icon = when (themeController.themeMode) {
+            AppThemeMode.SYSTEM -> Icons.Rounded.BrightnessAuto
+            AppThemeMode.LIGHT -> Icons.Rounded.LightMode
+            AppThemeMode.DARK -> Icons.Rounded.DarkMode
+        }
+        val desc = "Theme: ${themeController.themeMode.title}"
+        Icon(icon, contentDescription = desc, tint = MaterialTheme.colorScheme.onSurface)
+    }
+
+    if (showDialog) {
+        ThemeSelectorDialog(
+            currentMode = themeController.themeMode,
+            onSelectMode = {
+                themeController.setThemeMode(it)
+                showDialog = false
+            },
+            onDismiss = { showDialog = false }
+        )
+    }
+}
+
+@Composable
+fun ThemeSelectorDialog(
+    currentMode: AppThemeMode,
+    onSelectMode: (AppThemeMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Palette,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text("Appearance & Theme", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "Select your preferred interface theme. Setting applies immediately across the entire application.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(2.dp))
+                AppThemeMode.entries.forEach { mode ->
+                    val isSelected = mode == currentMode
+                    Surface(
+                        onClick = { onSelectMode(mode) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            val icon = when (mode) {
+                                AppThemeMode.SYSTEM -> Icons.Rounded.BrightnessAuto
+                                AppThemeMode.LIGHT -> Icons.Rounded.LightMode
+                                AppThemeMode.DARK -> Icons.Rounded.DarkMode
+                            }
+                            Box(
+                                Modifier
+                                    .size(36.dp)
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                                        RoundedCornerShape(8.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    mode.title,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    mode.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
+}
+

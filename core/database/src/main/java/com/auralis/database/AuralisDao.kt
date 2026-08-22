@@ -46,6 +46,12 @@ interface AuralisDao {
     @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY createdAtMillis DESC")
     fun observeBookmarks(bookId: String): Flow<List<BookmarkEntity>>
 
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId AND type = 'audio' ORDER BY segmentIndex ASC, audioTimestampMillis ASC")
+    fun observeAudioBookmarks(bookId: String): Flow<List<BookmarkEntity>>
+
+    @Query("DELETE FROM bookmarks WHERE id = :bookmarkId")
+    suspend fun deleteBookmark(bookmarkId: Long)
+
     @Insert
     suspend fun insertHighlight(highlight: HighlightEntity)
 

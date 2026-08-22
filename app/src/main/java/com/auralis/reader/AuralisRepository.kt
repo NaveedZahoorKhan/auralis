@@ -39,6 +39,7 @@ class AuralisRepository(private val context: Context) {
     fun observeCharacters(bookId: String) = dao.observeCharacters(bookId)
     fun observeJob(bookId: String) = dao.observeLatestAudiobookJob(bookId)
     fun observeBookmarks(bookId: String) = dao.observeBookmarks(bookId)
+    fun observeAudioBookmarks(bookId: String) = dao.observeAudioBookmarks(bookId)
     fun observeHighlights(bookId: String) = dao.observeHighlights(bookId)
     fun observeAudioSegments(bookId: String): Flow<List<com.auralis.database.AudioSegmentEntity>> = dao.observeAudioSegments(bookId)
     fun observeAudioPlaybackPosition(bookId: String): Flow<com.auralis.database.AudioPlaybackPositionEntity?> = dao.observeAudioPlaybackPosition(bookId)
@@ -266,16 +267,45 @@ class AuralisRepository(private val context: Context) {
         )
     }
 
-    suspend fun addBookmark(bookId: String, chapterId: String, label: String) {
+    suspend fun addBookmark(bookId: String, chapterId: String, label: String, note: String? = null) {
         dao.insertBookmark(
             BookmarkEntity(
                 bookId = bookId,
                 chapterId = chapterId,
                 textOffset = 0,
                 label = label,
+                note = note,
+                type = "text",
                 createdAtMillis = System.currentTimeMillis()
             )
         )
+    }
+
+    suspend fun addAudioBookmark(
+        bookId: String,
+        chapterId: String?,
+        segmentIndex: Int,
+        timestampMillis: Long,
+        label: String,
+        note: String? = null
+    ) {
+        dao.insertBookmark(
+            BookmarkEntity(
+                bookId = bookId,
+                chapterId = chapterId,
+                textOffset = 0,
+                label = label,
+                note = note,
+                audioTimestampMillis = timestampMillis,
+                segmentIndex = segmentIndex,
+                type = "audio",
+                createdAtMillis = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun deleteBookmark(bookmarkId: Long) {
+        dao.deleteBookmark(bookmarkId)
     }
 
     suspend fun addHighlight(bookId: String, chapterId: String, note: String) {

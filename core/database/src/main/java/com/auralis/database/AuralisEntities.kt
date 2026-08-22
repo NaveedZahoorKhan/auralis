@@ -57,10 +57,14 @@ data class ReadingPositionEntity(
 data class BookmarkEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val bookId: String,
-    val chapterId: String,
-    val textOffset: Int,
+    val chapterId: String?,
+    val textOffset: Int = 0,
     val label: String,
-    val createdAtMillis: Long
+    val note: String? = null,
+    val audioTimestampMillis: Long? = null,
+    val segmentIndex: Int? = null,
+    val type: String = if (audioTimestampMillis != null) "audio" else "text",
+    val createdAtMillis: Long = System.currentTimeMillis()
 )
 
 @Entity(
