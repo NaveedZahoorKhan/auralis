@@ -37,6 +37,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +46,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Bookmark
@@ -54,6 +57,8 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.LightMode
@@ -64,6 +69,8 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.VolumeDown
@@ -73,8 +80,11 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
@@ -160,6 +170,7 @@ private fun AuralisApp(repository: AuralisRepository) {
     val voices by repository.voices.collectAsState(initial = emptyList())
     var selectedBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var transientStatus by remember { mutableStateOf<String?>(null) }
+    var bookToDelete by remember { mutableStateOf<BookEntity?>(null) }
 
     LaunchedEffect(Unit) {
         repository.seedVoiceCatalog()
@@ -196,6 +207,36 @@ private fun AuralisApp(repository: AuralisRepository) {
         }
     }
 
+    bookToDelete?.let { book ->
+        AlertDialog(
+            onDismissRequest = { bookToDelete = null },
+            title = { Text("Remove Book") },
+            text = { Text("Are you sure you want to remove \"${book.title}\" from your library? This will delete all chapters, bookmarks, and audio for this book.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val id = book.id
+                        bookToDelete = null
+                        if (selectedBookId == id) {
+                            selectedBookId = null
+                        }
+                        scope.launch {
+                            repository.deleteBook(id)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { bookToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (selectedBookId == null) {
         LibraryScreen(
             books = books,
@@ -204,14 +245,16 @@ private fun AuralisApp(repository: AuralisRepository) {
             onImportBook = { importLauncher.launch(arrayOf("application/pdf", "application/epub+zip")) },
             onLoadSampleBook = ::loadSampleBook,
             onInstallVoice = ::downloadDefaultVoice,
-            onOpenBook = { selectedBookId = it }
+            onOpenBook = { selectedBookId = it },
+            onDeleteBook = { bookToDelete = it }
         )
     } else {
         BookScreen(
             repository = repository,
             bookId = selectedBookId.orEmpty(),
             onBack = { selectedBookId = null },
-            onInstallVoice = ::downloadDefaultVoice
+            onInstallVoice = ::downloadDefaultVoice,
+            onDeleteBook = { bookToDelete = it }
         )
     }
 }
@@ -225,7 +268,8 @@ private fun LibraryScreen(
     onImportBook: () -> Unit,
     onLoadSampleBook: () -> Unit,
     onInstallVoice: () -> Unit,
-    onOpenBook: (String) -> Unit
+    onOpenBook: (String) -> Unit,
+    onDeleteBook: (BookEntity) -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -262,7 +306,11 @@ private fun LibraryScreen(
                 EmptyLibrary(onImportBook = onImportBook, onLoadSampleBook = onLoadSampleBook)
             } else {
                 books.forEach { book ->
-                    BookRow(book = book, onClick = { onOpenBook(book.id) })
+                    BookRow(
+                        book = book,
+                        onClick = { onOpenBook(book.id) },
+                        onDelete = { onDeleteBook(book) }
+                    )
                 }
             }
         }
@@ -348,7 +396,11 @@ private fun EmptyLibrary(onImportBook: () -> Unit, onLoadSampleBook: () -> Unit)
 }
 
 @Composable
-private fun BookRow(book: BookEntity, onClick: () -> Unit) {
+private fun BookRow(
+    book: BookEntity,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -370,7 +422,13 @@ private fun BookRow(book: BookEntity, onClick: () -> Unit) {
                 Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${book.format.uppercase()}  ${book.importStatus}", style = MaterialTheme.typography.bodySmall)
             }
-            Icon(Icons.Rounded.Headphones, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Rounded.DeleteOutline,
+                    contentDescription = "Remove book",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }
@@ -381,7 +439,8 @@ private fun BookScreen(
     repository: AuralisRepository,
     bookId: String,
     onBack: () -> Unit,
-    onInstallVoice: () -> Unit
+    onInstallVoice: () -> Unit,
+    onDeleteBook: (BookEntity) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val book by repository.observeBook(bookId).collectAsState(initial = null)
@@ -424,6 +483,13 @@ private fun BookScreen(
                     }
                     IconButton(onClick = onInstallVoice) {
                         Icon(Icons.Rounded.Download, contentDescription = "Install voice")
+                    }
+                    IconButton(onClick = { book?.let(onDeleteBook) }) {
+                        Icon(
+                            Icons.Rounded.DeleteOutline,
+                            contentDescription = "Remove book",
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -492,11 +558,13 @@ private fun BookScreen(
                 "search" -> SearchPane(chapters, repository)
                 else -> ReaderPane(
                     chapter = selectedChapter,
+                    chapters = chapters,
                     chapterCount = chapters.size,
                     chapterIndex = chapterIndex,
                     text = selectedChapter?.let(repository::readChapterText).orEmpty(),
                     onPrevious = { chapterIndex = (chapterIndex - 1).coerceAtLeast(0) },
                     onNext = { chapterIndex = (chapterIndex + 1).coerceAtMost((chapters.size - 1).coerceAtLeast(0)) },
+                    onSelectChapter = { index -> chapterIndex = index },
                     onBookmark = { label, note ->
                         selectedChapter?.let { chapter ->
                             scope.launch { repository.addBookmark(bookId, chapter.id, label, note) }
@@ -505,6 +573,23 @@ private fun BookScreen(
                     onHighlight = {
                         selectedChapter?.let { chapter ->
                             scope.launch { repository.addHighlight(bookId, chapter.id, "Opening passage") }
+                        }
+                    },
+                    onTextClicked = { chapId, textOffset ->
+                        val chapterSegments = segments.filter { it.chapterId == chapId }
+                        if (chapterSegments.isNotEmpty()) {
+                            val targetSeg = chapterSegments.firstOrNull { textOffset in it.textStartOffset..it.textEndOffset }
+                                ?: chapterSegments.minByOrNull { kotlin.math.abs(it.textStartOffset - textOffset) }
+                            targetSeg?.let { seg ->
+                                val segIdx = segments.indexOf(seg)
+                                if (segIdx >= 0) {
+                                    val segLen = (seg.textEndOffset - seg.textStartOffset).coerceAtLeast(1)
+                                    val offsetInSeg = (textOffset - seg.textStartOffset).coerceIn(0, segLen)
+                                    val targetMillis = ((offsetInSeg.toFloat() / segLen.toFloat()) * seg.durationMillis).toLong()
+                                    audioJumpTarget = Pair(segIdx, targetMillis)
+                                    mode = "audio"
+                                }
+                            }
                         }
                     }
                 )
@@ -545,19 +630,25 @@ private fun ModeButton(
     }
 }
 
+private data class ParagraphItem(val startOffset: Int, val endOffset: Int, val text: String)
+
 @Composable
 private fun ReaderPane(
     chapter: ChapterEntity?,
+    chapters: List<ChapterEntity>,
     chapterCount: Int,
     chapterIndex: Int,
     text: String,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onSelectChapter: (Int) -> Unit,
     onBookmark: (String, String?) -> Unit,
-    onHighlight: () -> Unit
+    onHighlight: () -> Unit,
+    onTextClicked: (String, Int) -> Unit
 ) {
     val context = LocalContext.current
     var showBookmarkDialog by remember { mutableStateOf(false) }
+    var showChapterDropdown by remember { mutableStateOf(false) }
     var bookmarkLabel by remember { mutableStateOf("") }
     var bookmarkNote by remember { mutableStateOf("") }
 
@@ -565,6 +656,26 @@ private fun ReaderPane(
     var isLiveSpeaking by remember { mutableStateOf(false) }
     var isTtsReady by remember { mutableStateOf(false) }
     var ttsEngine by remember { mutableStateOf<TextToSpeech?>(null) }
+
+    val paragraphs = remember(text) {
+        if (text.isBlank()) emptyList()
+        else {
+            val list = mutableListOf<ParagraphItem>()
+            var searchPos = 0
+            text.split("\n\n").forEach { rawPara ->
+                val idx = text.indexOf(rawPara, searchPos)
+                val start = if (idx != -1) idx else searchPos
+                searchPos = start + rawPara.length
+                if (rawPara.isNotBlank()) {
+                    list.add(ParagraphItem(start, start + rawPara.length, rawPara.trim()))
+                }
+            }
+            if (list.isEmpty()) {
+                list.add(ParagraphItem(0, text.length, text.trim()))
+            }
+            list
+        }
+    }
 
     DisposableEffect(Unit) {
         var instance: TextToSpeech? = null
@@ -673,9 +784,39 @@ private fun ReaderPane(
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(onClick = onPrevious, enabled = chapterIndex > 0) { Text("Previous") }
-            Column(Modifier.weight(1f)) {
-                Text(chapter?.title ?: "No readable text", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${chapterIndex + 1} of ${chapterCount.coerceAtLeast(1)}", style = MaterialTheme.typography.labelMedium)
+            Box(Modifier.weight(1f)) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { if (chapters.isNotEmpty()) showChapterDropdown = true }
+                        .padding(vertical = 2.dp, horizontal = 4.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            chapter?.title ?: "No readable text",
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = "Select Chapter", modifier = Modifier.size(20.dp))
+                    }
+                    Text("${chapterIndex + 1} of ${chapterCount.coerceAtLeast(1)}", style = MaterialTheme.typography.labelMedium)
+                }
+                DropdownMenu(
+                    expanded = showChapterDropdown,
+                    onDismissRequest = { showChapterDropdown = false }
+                ) {
+                    chapters.forEachIndexed { idx, ch ->
+                        DropdownMenuItem(
+                            text = { Text("Chapter ${idx + 1}: ${ch.title}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            onClick = {
+                                onSelectChapter(idx)
+                                showChapterDropdown = false
+                            }
+                        )
+                    }
+                }
             }
             OutlinedButton(onClick = onNext, enabled = chapterIndex < chapterCount - 1) { Text("Next") }
         }
@@ -743,12 +884,62 @@ private fun ReaderPane(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = text.ifBlank { "This file did not expose selectable text. OCR support is reserved for the next implementation pass." },
-                style = MaterialTheme.typography.bodyLarge,
-                fontFamily = FontFamily.Serif,
-                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.35
-            )
+            if (paragraphs.isEmpty()) {
+                Text(
+                    text = "This file did not expose selectable text. OCR support is reserved for the next implementation pass.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontFamily = FontFamily.Serif,
+                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.35
+                )
+            } else {
+                paragraphs.forEach { para ->
+                    Surface(
+                        onClick = {
+                            if (isLiveSpeaking) {
+                                ttsEngine?.stop()
+                                val remainingText = text.substring(para.startOffset)
+                                val params = Bundle().apply {
+                                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                                }
+                                val chunks = remainingText.chunked(2500)
+                                chunks.forEachIndexed { index, chunk ->
+                                    val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                                    ttsEngine?.speak(chunk, queueMode, params, "live_reader_tap_$index")
+                                }
+                                isLiveSpeaking = true
+                            }
+                            chapter?.id?.let { chapId ->
+                                onTextClicked(chapId, para.startOffset)
+                            }
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                Icons.Rounded.PlayCircleOutline,
+                                contentDescription = "Play audio from this paragraph",
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Text(
+                                text = para.text,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontFamily = FontFamily.Serif,
+                                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.35,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -935,6 +1126,34 @@ private fun AudioPane(
             player.seekTo(clamped.toInt())
         }
         latestOnSavePosition(activeSegmentIndex, clamped, activeSegment?.chapterId)
+    }
+
+    fun skipToPreviousChapter() {
+        if (segments.isEmpty()) return
+        val currentChapterId = activeSegment?.chapterId ?: return
+        val currentChapIdx = chapters.indexOfFirst { it.id == currentChapterId }
+        if (currentChapIdx > 0) {
+            val targetChapId = chapters[currentChapIdx - 1].id
+            val targetSegIdx = segments.indexOfFirst { it.chapterId == targetChapId }
+            if (targetSegIdx >= 0) {
+                playSegment(targetSegIdx, 0L)
+            }
+        } else {
+            playSegment(0, 0L)
+        }
+    }
+
+    fun skipToNextChapter() {
+        if (segments.isEmpty()) return
+        val currentChapterId = activeSegment?.chapterId ?: return
+        val currentChapIdx = chapters.indexOfFirst { it.id == currentChapterId }
+        if (currentChapIdx >= 0 && currentChapIdx + 1 < chapters.size) {
+            val targetChapId = chapters[currentChapIdx + 1].id
+            val targetSegIdx = segments.indexOfFirst { it.chapterId == targetChapId }
+            if (targetSegIdx >= 0) {
+                playSegment(targetSegIdx, 0L)
+            }
+        }
     }
 
     DisposableEffect(bookId) {
@@ -1157,43 +1376,123 @@ private fun AudioPane(
             }
         }
 
+        if (chapters.isNotEmpty() && segments.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "Chapters",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    chapters.forEachIndexed { idx, chap ->
+                        val isCurrent = chap.id == activeSegment?.chapterId
+                        FilterChip(
+                            selected = isCurrent,
+                            onClick = {
+                                val segIdx = segments.indexOfFirst { it.chapterId == chap.id }
+                                if (segIdx >= 0) {
+                                    playSegment(segIdx, 0L)
+                                }
+                            },
+                            label = { Text("Ch ${idx + 1}: ${chap.title}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = if (isCurrent && isPlaying) {
+                                { MiniEqualizerBars(isPlaying = true, color = MaterialTheme.colorScheme.primary) }
+                            } else null
+                        )
+                    }
+                }
+            }
+        }
+
         if (segments.isNotEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     val currentChapter = chapters.firstOrNull { it.id == activeSegment?.chapterId }
 
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        FilledIconButton(onClick = ::togglePlayPause) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = currentChapter?.title ?: "Narration Track",
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Track ${activeSegmentIndex + 1} of ${segments.size}  •  ${formatAudioTime(currentPositionMillis)} / ${formatAudioTime(activeSegmentDuration)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Full Audio Playback Controls Bar
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        IconButton(
+                            onClick = ::skipToPreviousChapter,
+                            enabled = segments.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.Rounded.SkipPrevious,
+                                contentDescription = "Previous Chapter",
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { seekToMillis(currentPositionMillis - 10_000L) },
+                            enabled = segments.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.Rounded.FastRewind,
+                                contentDescription = "Rewind 10s",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        FilledIconButton(
+                            onClick = ::togglePlayPause,
+                            modifier = Modifier.size(52.dp)
+                        ) {
                             Icon(
                                 if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play"
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                modifier = Modifier.size(30.dp)
                             )
                         }
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = currentChapter?.title ?: "Narration Track",
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Track ${activeSegmentIndex + 1} of ${segments.size}  •  ${formatAudioTime(currentPositionMillis)} / ${formatAudioTime(activeSegmentDuration)}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        TextButton(
-                            onClick = { seekToMillis(currentPositionMillis - 10_000L) }
+
+                        IconButton(
+                            onClick = { seekToMillis(currentPositionMillis + 10_000L) },
+                            enabled = segments.isNotEmpty()
                         ) {
-                            Text("-10s", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Icon(
+                                Icons.Rounded.FastForward,
+                                contentDescription = "Forward 10s",
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
-                        TextButton(
-                            onClick = { seekToMillis(currentPositionMillis + 10_000L) }
+
+                        IconButton(
+                            onClick = ::skipToNextChapter,
+                            enabled = segments.isNotEmpty()
                         ) {
-                            Text("+10s", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Icon(
+                                Icons.Rounded.SkipNext,
+                                contentDescription = "Next Chapter",
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
                     }
 

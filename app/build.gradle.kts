@@ -8,7 +8,7 @@ val debugAbiFilters = (findProperty("auralis.abiFilters") as String?)
     ?.split(",")
     ?.map { it.trim() }
     ?.filter { it.isNotEmpty() }
-    ?: listOf("x86_64")
+    ?: listOf("arm64-v8a", "x86_64")
 
 android {
     namespace = "com.auralis.reader"
@@ -22,22 +22,26 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += debugAbiFilters
+            abiFilters.clear()
+            abiFilters.addAll(debugAbiFilters)
         }
     }
 
     signingConfigs {
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        val debugKeystore = file("${rootDir}/debug.keystore")
+        if (debugKeystore.exists()) {
+            create("debugConfig") {
+                storeFile = debugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
+            signingConfig = signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")
         }
         release {
             isMinifyEnabled = true

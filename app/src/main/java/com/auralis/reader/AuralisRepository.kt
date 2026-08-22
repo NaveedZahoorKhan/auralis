@@ -345,6 +345,23 @@ class AuralisRepository(private val context: Context) {
         return File(chapter.textPath).takeIf { it.exists() }?.readText().orEmpty()
     }
 
+    suspend fun deleteBook(bookId: String) = withContext(Dispatchers.IO) {
+        val book = dao.getBook(bookId)
+        val bookDir = File(context.filesDir, "books/$bookId")
+        if (bookDir.exists()) {
+            bookDir.deleteRecursively()
+        }
+        book?.localPath?.let { path ->
+            val localFile = File(path)
+            runCatching {
+                if (localFile.exists() && localFile.canonicalPath.startsWith(context.filesDir.canonicalPath)) {
+                    localFile.delete()
+                }
+            }
+        }
+        dao.deleteBookData(bookId)
+    }
+
     private fun stableId(bookId: String, value: String): String {
         return UUID.nameUUIDFromBytes("$bookId:$value".toByteArray()).toString()
     }

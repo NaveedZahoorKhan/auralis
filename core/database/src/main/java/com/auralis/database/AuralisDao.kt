@@ -127,6 +127,50 @@ interface AuralisDao {
     @Query("DELETE FROM audio_playback_positions WHERE bookId = :bookId")
     suspend fun deleteAudioPlaybackPosition(bookId: String)
 
+    @Query("DELETE FROM books WHERE id = :bookId")
+    suspend fun deleteBookEntity(bookId: String)
+
+    @Query("DELETE FROM chapters WHERE bookId = :bookId")
+    suspend fun deleteChapters(bookId: String)
+
+    @Query("DELETE FROM reading_positions WHERE bookId = :bookId")
+    suspend fun deleteReadingPosition(bookId: String)
+
+    @Query("DELETE FROM bookmarks WHERE bookId = :bookId")
+    suspend fun deleteBookmarks(bookId: String)
+
+    @Query("DELETE FROM highlights WHERE bookId = :bookId")
+    suspend fun deleteHighlights(bookId: String)
+
+    @Query("DELETE FROM book_metadata WHERE bookId = :bookId")
+    suspend fun deleteMetadata(bookId: String)
+
+    @Query("DELETE FROM characters WHERE bookId = :bookId")
+    suspend fun deleteCharacters(bookId: String)
+
+    @Query("DELETE FROM pronunciation_hints WHERE bookId = :bookId")
+    suspend fun deletePronunciationHints(bookId: String)
+
+    @Query("DELETE FROM audiobook_jobs WHERE bookId = :bookId")
+    suspend fun deleteAudiobookJobs(bookId: String)
+
+    @Query("DELETE FROM audio_segments WHERE bookId = :bookId")
+    suspend fun deleteAudioSegments(bookId: String)
+
+    @Transaction
+    suspend fun deleteBookData(bookId: String) {
+        deleteBookEntity(bookId)
+        deleteChapters(bookId)
+        deleteReadingPosition(bookId)
+        deleteBookmarks(bookId)
+        deleteHighlights(bookId)
+        deleteMetadata(bookId)
+        deleteCharacters(bookId)
+        deletePronunciationHints(bookId)
+        deleteAudioPlaybackPosition(bookId)
+        deleteAudioSegments(bookId)
+    }
+
     @Transaction
     suspend fun insertImportedBook(
         book: BookEntity,
