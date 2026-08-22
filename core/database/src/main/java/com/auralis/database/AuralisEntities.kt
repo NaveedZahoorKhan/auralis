@@ -145,6 +145,15 @@ data class AudiobookJobEntity(
     val updatedAtMillis: Long
 )
 
+@Entity(tableName = "audio_playback_positions")
+data class AudioPlaybackPositionEntity(
+    @PrimaryKey val bookId: String,
+    val segmentIndex: Int,
+    val positionMillis: Long,
+    val chapterId: String?,
+    val updatedAtMillis: Long
+)
+
 @Entity(
     tableName = "audio_segments",
     indices = [Index("bookId"), Index("chapterId"), Index("jobId")]

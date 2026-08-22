@@ -29,15 +29,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +54,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,13 +63,18 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import android.media.MediaPlayer
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,6 +86,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.auralis.database.AudioPlaybackPositionEntity
+import com.auralis.database.AudioSegmentEntity
 import com.auralis.database.AudiobookJobEntity
 import com.auralis.database.BookEntity
 import com.auralis.database.BookMetadataEntity
@@ -84,6 +96,7 @@ import com.auralis.database.ChapterEntity
 import com.auralis.database.CharacterProfileEntity
 import com.auralis.database.HighlightEntity
 import com.auralis.database.VoiceModelEntity
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -158,12 +171,23 @@ private fun AuralisApp(repository: AuralisRepository) {
         }
     }
 
+    fun loadSampleBook() {
+        scope.launch {
+            transientStatus = "Loading sample book..."
+            selectedBookId = runCatching { repository.importSampleBook() }
+                .onFailure { transientStatus = it.message ?: "Failed to load sample book" }
+                .getOrNull()
+            if (selectedBookId != null) transientStatus = null
+        }
+    }
+
     if (selectedBookId == null) {
         LibraryScreen(
             books = books,
             voices = voices,
             status = transientStatus,
             onImportBook = { importLauncher.launch(arrayOf("application/pdf", "application/epub+zip")) },
+            onLoadSampleBook = ::loadSampleBook,
             onInstallVoice = ::downloadDefaultVoice,
             onOpenBook = { selectedBookId = it }
         )
@@ -184,6 +208,7 @@ private fun LibraryScreen(
     voices: List<VoiceModelEntity>,
     status: String?,
     onImportBook: () -> Unit,
+    onLoadSampleBook: () -> Unit,
     onInstallVoice: () -> Unit,
     onOpenBook: (String) -> Unit
 ) {
@@ -218,7 +243,7 @@ private fun LibraryScreen(
         ) {
             StatusStrip(status = status, voices = voices, onInstallVoice = onInstallVoice)
             if (books.isEmpty()) {
-                EmptyLibrary(onImportBook)
+                EmptyLibrary(onImportBook = onImportBook, onLoadSampleBook = onLoadSampleBook)
             } else {
                 books.forEach { book ->
                     BookRow(book = book, onClick = { onOpenBook(book.id) })
@@ -278,11 +303,11 @@ private fun StatusStrip(
 }
 
 @Composable
-private fun EmptyLibrary(onImportBook: () -> Unit) {
+private fun EmptyLibrary(onImportBook: () -> Unit, onLoadSampleBook: () -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
-            .height(360.dp),
+            .height(420.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -296,6 +321,11 @@ private fun EmptyLibrary(onImportBook: () -> Unit) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Import PDF or EPUB")
+            }
+            OutlinedButton(onClick = onLoadSampleBook) {
+                Icon(Icons.Rounded.AutoStories, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Load Sample Book (The Time Machine)")
             }
         }
     }
@@ -343,9 +373,11 @@ private fun BookScreen(
     val metadata by repository.observeMetadata(bookId).collectAsState(initial = null)
     val characters by repository.observeCharacters(bookId).collectAsState(initial = emptyList())
     val job by repository.observeJob(bookId).collectAsState(initial = null)
+    val segments by repository.observeAudioSegments(bookId).collectAsState(initial = emptyList())
     val bookmarks by repository.observeBookmarks(bookId).collectAsState(initial = emptyList())
     val highlights by repository.observeHighlights(bookId).collectAsState(initial = emptyList())
     val voices by repository.voices.collectAsState(initial = emptyList())
+    val audioPlaybackPosition by repository.observeAudioPlaybackPosition(bookId).collectAsState(initial = null)
     var mode by rememberSaveable { mutableStateOf("read") }
     var chapterIndex by rememberSaveable(bookId) { mutableIntStateOf(0) }
 
@@ -390,8 +422,17 @@ private fun BookScreen(
             ModeTabs(selected = mode, onSelected = { mode = it })
             when (mode) {
                 "audio" -> AudioPane(
+                    bookId = bookId,
                     job = job,
+                    segments = segments,
+                    chapters = chapters,
                     voices = voices,
+                    savedPosition = audioPlaybackPosition,
+                    onSavePosition = { segIdx, posMillis, chapId ->
+                        scope.launch {
+                            repository.saveAudioPlaybackPosition(bookId, segIdx, posMillis, chapId)
+                        }
+                    },
                     onInstallVoice = onInstallVoice,
                     onPrepare = { repository.prepareAudiobook(bookId) }
                 )
@@ -496,8 +537,13 @@ private fun ReaderPane(
 
 @Composable
 private fun AudioPane(
+    bookId: String,
     job: AudiobookJobEntity?,
+    segments: List<AudioSegmentEntity>,
+    chapters: List<ChapterEntity>,
     voices: List<VoiceModelEntity>,
+    savedPosition: AudioPlaybackPositionEntity?,
+    onSavePosition: (Int, Long, String?) -> Unit,
     onInstallVoice: () -> Unit,
     onPrepare: () -> Unit
 ) {
@@ -511,10 +557,120 @@ private fun AudioPane(
         0f
     }
 
+    var activeSegmentIndex by rememberSaveable(bookId) { mutableIntStateOf(0) }
+    var currentPositionMillis by rememberSaveable(bookId) { mutableLongStateOf(0L) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isSeeking by remember { mutableStateOf(false) }
+    var sliderValue by remember { mutableFloatStateOf(0f) }
+    val player = remember { MediaPlayer() }
+    val latestOnSavePosition by rememberUpdatedState(onSavePosition)
+
+    // Automatically restore saved playback position on first load
+    var hasRestoredSavedPosition by rememberSaveable(bookId) { mutableStateOf(false) }
+    LaunchedEffect(savedPosition, segments) {
+        if (!hasRestoredSavedPosition && savedPosition != null && segments.isNotEmpty()) {
+            if (savedPosition.segmentIndex in segments.indices) {
+                activeSegmentIndex = savedPosition.segmentIndex
+                currentPositionMillis = savedPosition.positionMillis
+            }
+            hasRestoredSavedPosition = true
+        }
+    }
+
+    val activeSegment = segments.getOrNull(activeSegmentIndex.coerceIn(0, (segments.size - 1).coerceAtLeast(0)))
+    val activeSegmentDuration = activeSegment?.durationMillis?.coerceAtLeast(1000L) ?: 1000L
+
+    // Progress updater loop while playing - saves to Room periodically
+    LaunchedEffect(isPlaying, activeSegmentIndex) {
+        while (isPlaying) {
+            runCatching {
+                if (player.isPlaying) {
+                    val pos = player.currentPosition.toLong()
+                    if (!isSeeking) {
+                        currentPositionMillis = pos
+                    }
+                    latestOnSavePosition(activeSegmentIndex, pos, activeSegment?.chapterId)
+                }
+            }
+            delay(1000)
+        }
+    }
+
+    fun playSegment(index: Int, startPositionMillis: Long = 0L) {
+        if (index !in segments.indices) return
+        val segment = segments[index]
+        activeSegmentIndex = index
+        runCatching {
+            player.reset()
+            player.setDataSource(segment.filePath)
+            player.prepare()
+            if (startPositionMillis > 0 && startPositionMillis < (segment.durationMillis - 250)) {
+                player.seekTo(startPositionMillis.toInt())
+                currentPositionMillis = startPositionMillis
+            } else {
+                currentPositionMillis = 0L
+            }
+            player.start()
+            isPlaying = true
+            latestOnSavePosition(activeSegmentIndex, currentPositionMillis, segment.chapterId)
+            player.setOnCompletionListener {
+                if (activeSegmentIndex + 1 < segments.size) {
+                    playSegment(activeSegmentIndex + 1, 0L)
+                } else {
+                    isPlaying = false
+                    currentPositionMillis = segment.durationMillis
+                    latestOnSavePosition(activeSegmentIndex, currentPositionMillis, segment.chapterId)
+                }
+            }
+        }.onFailure {
+            isPlaying = false
+        }
+    }
+
+    fun togglePlayPause() {
+        if (segments.isEmpty()) return
+        if (isPlaying) {
+            val currentPos = runCatching { player.currentPosition.toLong() }.getOrDefault(currentPositionMillis)
+            player.pause()
+            isPlaying = false
+            currentPositionMillis = currentPos
+            latestOnSavePosition(activeSegmentIndex, currentPos, activeSegment?.chapterId)
+        } else {
+            if (player.currentPosition > 0 && activeSegmentIndex in segments.indices) {
+                player.start()
+                isPlaying = true
+            } else {
+                playSegment(activeSegmentIndex.coerceIn(0, (segments.size - 1).coerceAtLeast(0)), currentPositionMillis)
+            }
+        }
+    }
+
+    fun seekToMillis(targetMillis: Long) {
+        val clamped = targetMillis.coerceIn(0L, activeSegmentDuration)
+        currentPositionMillis = clamped
+        runCatching {
+            player.seekTo(clamped.toInt())
+        }
+        latestOnSavePosition(activeSegmentIndex, clamped, activeSegment?.chapterId)
+    }
+
+    DisposableEffect(bookId) {
+        onDispose {
+            runCatching {
+                if (player.isPlaying) {
+                    val pos = player.currentPosition.toLong()
+                    latestOnSavePosition(activeSegmentIndex, pos, activeSegment?.chapterId)
+                }
+                player.release()
+            }
+        }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -556,7 +712,7 @@ private fun AudioPane(
             FilledTonalButton(onClick = onInstallVoice) {
                 Icon(Icons.Rounded.Mic, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (installedVoice == null) "Download voice" else "Voice installed")
+                Text(if (installedVoice == null) "Download voice" else "Voice ready")
             }
             Button(onClick = onPrepare, enabled = installedVoice != null && synthesisReady) {
                 Icon(Icons.Rounded.PlayArrow, contentDescription = null)
@@ -564,13 +720,174 @@ private fun AudioPane(
                 Text(
                     when {
                         installedVoice == null -> "Install voice first"
-                        job?.status == "running" -> "Restart"
-                        else -> "Prepare"
+                        job?.status == "running" -> "Restarting..."
+                        job?.status == "complete" -> "Regenerate"
+                        else -> "Generate Audio"
                     }
                 )
             }
         }
+
+        if (savedPosition != null && segments.isNotEmpty() && !isPlaying) {
+            val savedChapter = chapters.firstOrNull { it.id == savedPosition.chapterId }
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Headphones,
+                        contentDescription = "Saved Position",
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Saved position: Track ${savedPosition.segmentIndex + 1} (${formatAudioTime(savedPosition.positionMillis)})",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = {
+                            playSegment(savedPosition.segmentIndex, savedPosition.positionMillis)
+                        }
+                    ) {
+                        Text("Resume", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        if (segments.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val currentChapter = chapters.firstOrNull { it.id == activeSegment?.chapterId }
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FilledIconButton(onClick = ::togglePlayPause) {
+                            Icon(
+                                if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play"
+                            )
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = currentChapter?.title ?: "Narration Track",
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Track ${activeSegmentIndex + 1} of ${segments.size}  •  ${formatAudioTime(currentPositionMillis)} / ${formatAudioTime(activeSegmentDuration)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        TextButton(
+                            onClick = { seekToMillis(currentPositionMillis - 10_000L) }
+                        ) {
+                            Text("-10s", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = { seekToMillis(currentPositionMillis + 10_000L) }
+                        ) {
+                            Text("+10s", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Scrubber Slider
+                    val effectiveFraction = if (isSeeking) {
+                        sliderValue
+                    } else {
+                        (currentPositionMillis.toFloat() / activeSegmentDuration.toFloat()).coerceIn(0f, 1f)
+                    }
+
+                    Slider(
+                        value = effectiveFraction,
+                        onValueChange = { frac ->
+                            isSeeking = true
+                            sliderValue = frac
+                        },
+                        onValueChangeFinished = {
+                            val targetMillis = (sliderValue * activeSegmentDuration).toLong()
+                            isSeeking = false
+                            seekToMillis(targetMillis)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(formatAudioTime(currentPositionMillis), style = MaterialTheme.typography.labelSmall)
+                        Text(formatAudioTime(activeSegmentDuration), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+
+            Text("Audio Tracks", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            segments.forEachIndexed { idx, segment ->
+                val chapter = chapters.firstOrNull { it.id == segment.chapterId }
+                val isCurrent = idx == activeSegmentIndex
+                Card(
+                    onClick = {
+                        val resumeOffset = if (isCurrent) currentPositionMillis else 0L
+                        playSegment(idx, resumeOffset)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else Color.White
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isCurrent && isPlaying) Icons.Rounded.VolumeUp else Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = chapter?.title ?: "Segment ${idx + 1}",
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${segment.durationMillis / 1000}s duration" + if (isCurrent && currentPositionMillis > 0) " • at ${formatAudioTime(currentPositionMillis)}" else "",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun formatAudioTime(millis: Long): String {
+    val totalSeconds = (millis / 1000).coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
 }
 
 private fun audioJobStatus(status: String?): String {

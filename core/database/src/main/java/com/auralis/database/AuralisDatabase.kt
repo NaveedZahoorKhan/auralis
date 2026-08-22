@@ -17,9 +17,10 @@ import androidx.room.RoomDatabase
         PronunciationHintEntity::class,
         VoiceModelEntity::class,
         AudiobookJobEntity::class,
-        AudioSegmentEntity::class
+        AudioSegmentEntity::class,
+        AudioPlaybackPositionEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AuralisDatabase : RoomDatabase() {
@@ -36,7 +37,7 @@ abstract class AuralisDatabase : RoomDatabase() {
                     AuralisDatabase::class.java,
                     "auralis.db"
                 )
-                    .fallbackToDestructiveMigration(false)
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { instance = it }
             }

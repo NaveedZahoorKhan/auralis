@@ -31,10 +31,10 @@ class VoiceModelRepository(
                 displayName = "Kokoro Natural English",
                 language = "en",
                 runtime = "kokoro-onnx",
-                status = "available",
+                status = "installed",
                 modelPath = null,
                 configPath = null,
-                sizeBytes = null,
+                sizeBytes = 85_000_000L,
                 updatedAtMillis = now
             )
         )

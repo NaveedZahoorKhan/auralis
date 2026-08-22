@@ -97,6 +97,18 @@ interface AuralisDao {
     @Query("SELECT * FROM audio_segments WHERE bookId = :bookId ORDER BY sortIndex")
     fun observeAudioSegments(bookId: String): Flow<List<AudioSegmentEntity>>
 
+    @Upsert
+    suspend fun upsertAudioPlaybackPosition(position: AudioPlaybackPositionEntity)
+
+    @Query("SELECT * FROM audio_playback_positions WHERE bookId = :bookId")
+    fun observeAudioPlaybackPosition(bookId: String): Flow<AudioPlaybackPositionEntity?>
+
+    @Query("SELECT * FROM audio_playback_positions WHERE bookId = :bookId")
+    suspend fun getAudioPlaybackPosition(bookId: String): AudioPlaybackPositionEntity?
+
+    @Query("DELETE FROM audio_playback_positions WHERE bookId = :bookId")
+    suspend fun deleteAudioPlaybackPosition(bookId: String)
+
     @Transaction
     suspend fun insertImportedBook(
         book: BookEntity,

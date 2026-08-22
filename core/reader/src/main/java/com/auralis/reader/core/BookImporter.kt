@@ -19,8 +19,14 @@ class BookImporter(private val context: Context) {
         val bookDir = File(context.filesDir, "books/$id").also { it.mkdirs() }
         val sourceFile = File(bookDir, "source.${format.extensionFor(displayName)}")
 
-        context.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "Unable to open selected book." }
+        val sourceStream = runCatching {
+            context.contentResolver.openInputStream(uri)
+        }.getOrNull() ?: run {
+            val path = uri.path
+            if (path != null && File(path).exists()) File(path).inputStream() else null
+        }
+        requireNotNull(sourceStream) { "Unable to open selected book." }
+        sourceStream.use { input ->
             sourceFile.outputStream().use { output -> input.copyTo(output) }
         }
 
