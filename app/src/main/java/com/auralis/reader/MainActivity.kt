@@ -182,24 +182,41 @@ import com.auralis.database.HighlightEntity
 import com.auralis.database.VoiceModelEntity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.content.Intent
 
 class MainActivity : ComponentActivity() {
+    private var pendingIntentUri = mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (intent?.action == Intent.ACTION_VIEW) {
+            pendingIntentUri.value = intent.data
+        }
+
         val repository = AuralisRepository(applicationContext)
         val themePreferencesManager = ThemePreferencesManager.get(applicationContext)
         setContent {
             AuralisThemeProvider(themePreferencesManager) {
-                AuralisApp(repository)
+                AuralisApp(repository, pendingIntentUri.value) {
+                    pendingIntentUri.value = null
+                }
             }
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == Intent.ACTION_VIEW) {
+            pendingIntentUri.value = intent.data
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AuralisApp(repository: AuralisRepository) {
+private fun AuralisApp(repository: AuralisRepository, pendingIntentUri: Uri? = null, onIntentHandled: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val books by repository.books.collectAsState(initial = emptyList())
     val voices by repository.voices.collectAsState(initial = emptyList())
@@ -213,6 +230,17 @@ private fun AuralisApp(repository: AuralisRepository) {
 
     LaunchedEffect(Unit) {
         repository.seedVoiceCatalog()
+    }
+
+    LaunchedEffect(pendingIntentUri) {
+        pendingIntentUri?.let { uri ->
+            transientStatus = "Importing book..."
+            selectedBookId = runCatching { repository.importBook(uri) }
+                .onFailure { transientStatus = it.message ?: "Import failed" }
+                .getOrNull()
+            if (selectedBookId != null) transientStatus = null
+            onIntentHandled()
+        }
     }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
