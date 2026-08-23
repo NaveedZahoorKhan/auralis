@@ -742,13 +742,19 @@ private fun BookScreen(
                 chapters.take(6)
             }
 
+            val bookTitle = book?.title ?: "Book"
+            val author = book?.author ?: "Unknown Author"
+
+            val metadata = GoogleBooksClient.getMetadata(bookTitle, author)
+
             val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                 com.auralis.ai.DeepstashSummarizer(llmRuntime).generateSummary(
-                    bookTitle = book?.title ?: "Book",
-                    author = book?.author ?: "Unknown Author",
+                    bookTitle = bookTitle,
+                    author = author,
                     chapters = activeChapters.map { chap -> Pair(chap.title, repository.readChapterText(chap)) },
                     slmModelFile = if (status == com.auralis.ai.SlmModelStatus.INSTALLED) slmFile else null,
-                    slmModelName = if (status == com.auralis.ai.SlmModelStatus.INSTALLED) "${slmSpec.name} (ONNX SLM)" else "Built-in SLM Engine (Fallback for ${slmSpec.name})"
+                    slmModelName = if (status == com.auralis.ai.SlmModelStatus.INSTALLED) "${slmSpec.name} (ONNX SLM)" else "Built-in SLM Engine (Fallback for ${slmSpec.name})",
+                    bookDescription = metadata?.description
                 )
             }
 
