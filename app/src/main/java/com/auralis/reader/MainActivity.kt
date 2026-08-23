@@ -89,6 +89,7 @@ import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.LastPage
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -131,6 +132,9 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
@@ -703,6 +707,7 @@ private fun BookScreen(
     var chapterIndex by rememberSaveable(bookId) { mutableIntStateOf(0) }
     var audioJumpTarget by remember { mutableStateOf<Pair<Int, Long>?>(null) }
     var isImmersive by rememberSaveable { mutableStateOf(false) }
+    var showTopBarOverflow by remember { mutableStateOf(false) }
 
     var selectedVoiceId by rememberSaveable { mutableStateOf(com.auralis.audio.VoiceModelRepository.DEFAULT_KOKORO_VOICE_ID) }
     var enableSmartSkipping by rememberSaveable { mutableStateOf(true) }
@@ -781,18 +786,39 @@ private fun BookScreen(
                         IconButton(onClick = { mode = "search" }) {
                             Icon(Icons.Rounded.Search, contentDescription = "Search")
                         }
-                        IconButton(onClick = { showSlmSettingsDialog = true }) {
-                            Icon(Icons.Rounded.Psychology, contentDescription = "Book Intelligence & SLM Settings")
-                        }
-                        IconButton(onClick = onOpenVoiceSettings) {
-                            Icon(Icons.Rounded.Mic, contentDescription = "Voice Models & Settings")
-                        }
-                        IconButton(onClick = { book?.let(onDeleteBook) }) {
-                            Icon(
-                                Icons.Rounded.DeleteOutline,
-                                contentDescription = "Remove book",
-                                tint = MaterialTheme.colorScheme.error
-                            )
+                        Box {
+                            IconButton(onClick = { showTopBarOverflow = true }) {
+                                Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+                            }
+                            DropdownMenu(
+                                expanded = showTopBarOverflow,
+                                onDismissRequest = { showTopBarOverflow = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Book Intelligence") },
+                                    leadingIcon = { Icon(Icons.Rounded.Psychology, contentDescription = null) },
+                                    onClick = {
+                                        showTopBarOverflow = false
+                                        showSlmSettingsDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Voice Models") },
+                                    leadingIcon = { Icon(Icons.Rounded.Mic, contentDescription = null) },
+                                    onClick = {
+                                        showTopBarOverflow = false
+                                        onOpenVoiceSettings()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Remove book", color = MaterialTheme.colorScheme.error) },
+                                    leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                    onClick = {
+                                        showTopBarOverflow = false
+                                        book?.let(onDeleteBook)
+                                    }
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -828,18 +854,51 @@ private fun BookScreen(
                     elevation = FloatingActionButtonDefaults.elevation(8.dp)
                 )
             }
+        },
+        bottomBar = {
+            if (showTopControls) {
+                androidx.compose.material3.NavigationBar {
+                    NavigationBarItem(
+                        selected = mode == "read",
+                        onClick = { mode = "read" },
+                        icon = { Icon(Icons.Rounded.Book, contentDescription = "Read") },
+                        label = { Text("Read", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
+                    NavigationBarItem(
+                        selected = mode == "audio",
+                        onClick = { mode = "audio" },
+                        icon = { Icon(Icons.Rounded.Headphones, contentDescription = "Audio") },
+                        label = { Text("Audio", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
+                    NavigationBarItem(
+                        selected = mode == "deepstash",
+                        onClick = { mode = "deepstash" },
+                        icon = { Icon(Icons.Rounded.AutoStories, contentDescription = "Deepstash") },
+                        label = { Text("Deepstash", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
+                    NavigationBarItem(
+                        selected = mode == "notes",
+                        onClick = { mode = "notes" },
+                        icon = { Icon(Icons.Rounded.Star, contentDescription = "Notes") },
+                        label = { Text("Notes", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
+                    NavigationBarItem(
+                        selected = mode == "details",
+                        onClick = { mode = "details" },
+                        icon = { Icon(Icons.Rounded.GraphicEq, contentDescription = "Details") },
+                        label = { Text("Details", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
+                }
+            }
         }
     ) { padding ->
         Column(
             Modifier
-                .padding(if (showTopControls) padding else PaddingValues(top = 8.dp, bottom = 8.dp))
+                .padding(padding)
                 .fillMaxSize()
                 .padding(horizontal = if (isImmersive && mode == "read") 10.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(if (isImmersive && mode == "read") 4.dp else 10.dp)
         ) {
-            if (showTopControls) {
-                ModeTabs(selected = mode, onSelected = { mode = it })
-            }
             when (mode) {
                 "audio" -> AudioPane(
                     bookId = bookId,
@@ -967,44 +1026,7 @@ private fun BookScreen(
     }
 }
 
-@Composable
-private fun ModeTabs(selected: String, onSelected: (String) -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        ModeButton("read", "Read", Icons.Rounded.Book, selected, onSelected)
-        ModeButton("audio", "Audio", Icons.Rounded.Headphones, selected, onSelected)
-        ModeButton("deepstash", "Deepstash", Icons.Rounded.AutoStories, selected, onSelected)
-        ModeButton("voices", "Voice & Models", Icons.Rounded.Mic, selected, onSelected)
-        ModeButton("details", "Details", Icons.Rounded.GraphicEq, selected, onSelected)
-        ModeButton("notes", "Notes", Icons.Rounded.Star, selected, onSelected)
-    }
-}
 
-@Composable
-private fun ModeButton(
-    id: String,
-    label: String,
-    icon: ImageVector,
-    selected: String,
-    onSelected: (String) -> Unit
-) {
-    val selectedMode = selected == id
-    if (selectedMode) {
-        Button(onClick = { onSelected(id) }, modifier = Modifier.height(40.dp)) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(label)
-        }
-    } else {
-        OutlinedButton(onClick = { onSelected(id) }, modifier = Modifier.height(40.dp)) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
-        }
-    }
-}
 
 private data class ParagraphItem(val startOffset: Int, val endOffset: Int, val text: String)
 
