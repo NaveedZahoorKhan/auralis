@@ -133,7 +133,8 @@ class OnDeviceLlmRuntime {
         bookTitle: String,
         author: String,
         chapters: List<Pair<String, String>>,
-        modelFile: File
+        modelFile: File,
+        bookDescription: String? = null
     ): DeepstashSummaryResult? {
         Log.i("AuralisSLM", "generateDeepstashWithOnnx initiating for \"$bookTitle\" by $author using ONNX model ${modelFile.name} (File Size: ${modelFile.length()} bytes)")
 
@@ -143,8 +144,8 @@ class OnDeviceLlmRuntime {
         }
 
         return runCatching {
-            val cards = DeepstashSummarizer.extractHighQualityCards(bookTitle, author, chapters)
-            val execSummary = DeepstashSummarizer.generateExecutiveSummary(bookTitle, author, chapters, cards)
+            val cards = DeepstashSummarizer.extractHighQualityCards(bookTitle, author, chapters, bookDescription)
+            val execSummary = DeepstashSummarizer.generateExecutiveSummary(bookTitle, author, chapters, cards, bookDescription)
 
             Log.i("AuralisSLM", "ONNX SLM Execution COMPLETED successfully: Generated ${cards.size} high-salience insight cards across ${chapters.size} chapters using model ${modelFile.nameWithoutExtension}.")
 

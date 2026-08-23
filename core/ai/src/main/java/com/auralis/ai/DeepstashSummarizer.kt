@@ -41,7 +41,8 @@ class DeepstashSummarizer(
         author: String,
         chapters: List<Pair<String, String>>,
         slmModelFile: File? = null,
-        slmModelName: String = "Qwen 2.5 0.5B (Local SLM)"
+        slmModelName: String = "Qwen 2.5 0.5B (Local SLM)",
+        bookDescription: String? = null
     ): DeepstashSummaryResult {
         Log.d("AuralisSLM", "DeepstashSummarizer: generateSummary requested for '$bookTitle' (Chapters: ${chapters.size}, slmModelFile: ${slmModelFile?.name})")
         
@@ -52,7 +53,8 @@ class DeepstashSummarizer(
                 bookTitle = bookTitle,
                 author = author,
                 chapters = chapters,
-                modelFile = slmModelFile
+                modelFile = slmModelFile,
+                bookDescription = bookDescription
             )
             if (slmResult != null && slmResult.cards.isNotEmpty()) {
                 Log.i("AuralisSLM", "DeepstashSummarizer: Successfully generated ${slmResult.cards.size} ONNX SLM insight cards.")
@@ -63,9 +65,9 @@ class DeepstashSummarizer(
         Log.w("AuralisSLM", "DeepstashSummarizer: ONNX SLM model inactive or produced empty result. Executing advanced Distillation Engine.")
 
         // Advanced Distillation Engine scanning whole book
-        val extractedCards = extractHighQualityCards(bookTitle, author, chapters)
+        val extractedCards = extractHighQualityCards(bookTitle, author, chapters, bookDescription)
         
-        val executiveSummaryText = generateExecutiveSummary(bookTitle, author, chapters, extractedCards)
+        val executiveSummaryText = generateExecutiveSummary(bookTitle, author, chapters, extractedCards, bookDescription)
 
         return DeepstashSummaryResult(
             bookTitle = bookTitle,
@@ -83,10 +85,26 @@ class DeepstashSummarizer(
         fun extractHighQualityCards(
             bookTitle: String,
             author: String,
-            chapters: List<Pair<String, String>>
+            chapters: List<Pair<String, String>>,
+            bookDescription: String? = null
         ): List<DeepstashInsightCard> {
             val cards = mutableListOf<DeepstashInsightCard>()
             var cardIndex = 0
+
+            // Add metadata overview card if available
+            if (!bookDescription.isNullOrBlank()) {
+                cards.add(
+                    DeepstashInsightCard(
+                        id = "card_metadata_overview",
+                        title = "Book Overview",
+                        type = InsightType.KEY_IDEA,
+                        content = bookDescription,
+                        readTimeSeconds = calculateReadTime(bookDescription),
+                        chapterTitle = "Metadata",
+                        confidence = 0.99f
+                    )
+                )
+            }
 
             // 0. Extract Table of Contents / Chapter Structure Card
             val tocCard = extractTocCardIfAvailable(bookTitle, chapters)
@@ -254,8 +272,18 @@ class DeepstashSummarizer(
             bookTitle: String,
             author: String,
             chapters: List<Pair<String, String>>,
-            cards: List<DeepstashInsightCard>
+            cards: List<DeepstashInsightCard>,
+            bookDescription: String? = null
         ): String {
+            if (!bookDescription.isNullOrBlank()) {
+                val briefDescription = if (bookDescription.length > 200) {
+                    bookDescription.substring(0, 197) + "..."
+                } else {
+                    bookDescription
+                }
+                return "\"$bookTitle\" by $author: $briefDescription (Analyzed ${chapters.size} chapters into ${cards.size} visual takeaways)."
+            }
+
             val keyIdeas = cards.filter { it.type == InsightType.KEY_IDEA }.take(2).map { it.content }
             val takeaways = cards.filter { it.type == InsightType.ACTIONABLE_TAKEAWAY }.take(1).map { it.content }
 
