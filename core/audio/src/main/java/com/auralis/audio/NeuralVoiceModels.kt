@@ -18,8 +18,8 @@ data class RenderedAudioSegment(
 )
 
 sealed class VoiceRuntimeFailure(message: String) : RuntimeException(message) {
-    class MissingVoiceModel : VoiceRuntimeFailure("A natural neural voice model must be installed before audiobook generation.")
-    class UnsupportedVoicePack : VoiceRuntimeFailure("The selected ONNX voice pack could not be opened by the local runtime.")
+    class MissingVoiceModel(message: String = "A natural neural voice model must be installed before audiobook generation.") : VoiceRuntimeFailure(message)
+    class UnsupportedVoicePack(message: String = "The selected ONNX voice pack could not be opened by the local runtime.") : VoiceRuntimeFailure(message)
     class SynthesisFailed(message: String) : VoiceRuntimeFailure(message)
 }
 

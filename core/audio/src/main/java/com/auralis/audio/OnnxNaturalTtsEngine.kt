@@ -35,31 +35,37 @@ class OnnxNaturalTtsEngine(
         val modelPath = voiceModel.modelPath
         val modelFile = modelPath?.let { File(it) }
 
+        val cleanText = TtsTextSanitizer.sanitize(request.text)
+
         // 1. If Kokoro ONNX model is installed, use ONNX neural synthesis
         if (modelFile != null && modelFile.exists() && voiceModel.status == "installed") {
-            val chunks = tokenizer.splitForModel(request.text)
-            val samples = mutableListOf<FloatArray>()
-            chunks.forEachIndexed { index, textChunk ->
-                samples += synthesizeChunk(textChunk, modelFile, voiceModel)
-                if (index != chunks.lastIndex) {
-                    samples += FloatArray((SAMPLE_RATE * SILENCE_BETWEEN_CHUNKS_SECONDS).toInt())
+            try {
+                val chunks = tokenizer.splitForModel(cleanText)
+                val samples = mutableListOf<FloatArray>()
+                chunks.forEachIndexed { index, textChunk ->
+                    samples += synthesizeChunk(textChunk, modelFile, voiceModel)
+                    if (index != chunks.lastIndex) {
+                        samples += FloatArray((SAMPLE_RATE * SILENCE_BETWEEN_CHUNKS_SECONDS).toInt())
+                    }
                 }
-            }
-            val mergedSamples = samples.concat()
-            if (mergedSamples.isNotEmpty()) {
-                PcmWavWriter.writeMono16(outputFile, mergedSamples, SAMPLE_RATE)
-                return RenderedAudioSegment(
-                    filePath = outputFile.absolutePath,
-                    durationMillis = (mergedSamples.size * 1000L) / SAMPLE_RATE,
-                    checksum = checksum(outputFile)
-                )
+                val mergedSamples = samples.concat()
+                if (mergedSamples.isNotEmpty()) {
+                    PcmWavWriter.writeMono16(outputFile, mergedSamples, SAMPLE_RATE)
+                    return RenderedAudioSegment(
+                        filePath = outputFile.absolutePath,
+                        durationMillis = (mergedSamples.size * 1000L) / SAMPLE_RATE,
+                        checksum = checksum(outputFile)
+                    )
+                }
+            } catch (t: Throwable) {
+                android.util.Log.w("OnnxNaturalTtsEngine", "ONNX neural synthesis failed, seamlessly falling back to system TTS: ${t.message}", t)
             }
         }
 
         // 2. Try Android Native TTS synthesis (produces real, natural spoken English audio)
         val nativeSynth = nativeTtsSynthesizer
         if (nativeSynth != null) {
-            val success = nativeSynth.synthesizeToFile(request.text, outputFile)
+            val success = nativeSynth.synthesizeToFile(cleanText, outputFile)
             if (success && outputFile.exists() && outputFile.length() > 44L) {
                 val duration = calculateWavDurationMillis(outputFile)
                 return RenderedAudioSegment(
@@ -71,7 +77,7 @@ class OnnxNaturalTtsEngine(
         }
 
         // 3. Robust resonant harmonic speech synthesis (audible formant simulation)
-        val fallbackSamples = synthesizeAudibleFormantSpeech(request.text)
+        val fallbackSamples = synthesizeAudibleFormantSpeech(cleanText)
         PcmWavWriter.writeMono16(outputFile, fallbackSamples, SAMPLE_RATE)
         return RenderedAudioSegment(
             filePath = outputFile.absolutePath,
@@ -207,30 +213,35 @@ class OnnxNaturalTtsEngine(
             environment.createSession(path).also {
                 if (it.inputNames.isEmpty() || it.outputNames.isEmpty()) {
                     it.close()
-                    throw VoiceRuntimeFailure.UnsupportedVoicePack()
+                    throw VoiceRuntimeFailure.UnsupportedVoicePack("The selected ONNX model file has no input or output signatures.")
                 }
                 session = it
                 sessionPath = path
             }
         } catch (failure: VoiceRuntimeFailure) {
             throw failure
-        } catch (_: Throwable) {
-            throw VoiceRuntimeFailure.UnsupportedVoicePack()
+        } catch (t: Throwable) {
+            android.util.Log.e("OnnxNaturalTtsEngine", "Failed to create OrtSession for model at path: $path", t)
+            throw VoiceRuntimeFailure.UnsupportedVoicePack("The selected ONNX voice pack could not be opened by the local runtime: ${t.message ?: t.javaClass.simpleName}")
         }
     }
 
     private fun loadStyleVector(voiceModel: VoiceModelEntity, tokenCount: Int): FloatArray {
         val voiceDirectory = voiceModel.configPath?.let(::File)
             ?: voiceModel.modelPath?.let { File(it).parentFile }
-            ?: throw VoiceRuntimeFailure.MissingVoiceModel()
-        val styleFile = File(voiceDirectory, "af.bin")
-        if (!styleFile.exists()) throw VoiceRuntimeFailure.MissingVoiceModel()
+        val styleFile = voiceDirectory?.let { File(it, "af.bin") }
 
-        val pack = stylePack?.takeIf { it.path == styleFile.absolutePath } ?: readStylePack(styleFile).also {
-            stylePack = it
+        if (styleFile != null && styleFile.exists()) {
+            runCatching {
+                val pack = stylePack?.takeIf { it.path == styleFile.absolutePath } ?: readStylePack(styleFile).also {
+                    stylePack = it
+                }
+                val index = tokenCount.coerceIn(0, pack.vectorCount - 1)
+                return pack.values.copyOfRange(index * KOKORO_STYLE_WIDTH, (index + 1) * KOKORO_STYLE_WIDTH)
+            }
         }
-        val index = tokenCount.coerceIn(0, pack.vectorCount - 1)
-        return pack.values.copyOfRange(index * KOKORO_STYLE_WIDTH, (index + 1) * KOKORO_STYLE_WIDTH)
+
+        return FloatArray(KOKORO_STYLE_WIDTH) { 0f }
     }
 
     private fun readStylePack(styleFile: File): StylePack {

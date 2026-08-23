@@ -4,7 +4,8 @@ import java.util.Locale
 
 internal class KokoroEnglishTokenizer {
     fun tokenize(text: String): LongArray {
-        val phonemes = phonemize(text)
+        val cleanText = TtsTextSanitizer.sanitize(text)
+        val phonemes = phonemize(cleanText)
         val ids = mutableListOf<Long>()
         ids += PAD
         phonemes.forEachCodePoint { token ->
@@ -16,7 +17,8 @@ internal class KokoroEnglishTokenizer {
     }
 
     fun splitForModel(text: String): List<String> {
-        val sentences = text
+        val cleanText = TtsTextSanitizer.sanitize(text)
+        val sentences = cleanText
             .replace(Regex("\\s+"), " ")
             .trim()
             .split(Regex("(?<=[.!?])\\s+"))

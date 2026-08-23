@@ -17,12 +17,16 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import com.auralis.audio.TtsTextSanitizer
+import com.auralis.audio.HumanSpeechPacer
+import com.auralis.audio.SentenceCadence
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +38,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,7 +48,26 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.LastPage
+import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDropDown
@@ -69,7 +93,9 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayCircleOutline
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.RecordVoiceOver
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -88,9 +114,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -175,6 +203,10 @@ private fun AuralisApp(repository: AuralisRepository) {
     var transientStatus by remember { mutableStateOf<String?>(null) }
     var bookToDelete by remember { mutableStateOf<BookEntity?>(null) }
 
+    var showVoiceSettingsDialog by remember { mutableStateOf(false) }
+    var activeVoiceId by rememberSaveable { mutableStateOf(com.auralis.audio.VoiceModelRepository.DEFAULT_KOKORO_VOICE_ID) }
+    var enableSmartSkipping by rememberSaveable { mutableStateOf(true) }
+
     LaunchedEffect(Unit) {
         repository.seedVoiceCatalog()
     }
@@ -208,6 +240,18 @@ private fun AuralisApp(repository: AuralisRepository) {
                 .getOrNull()
             if (selectedBookId != null) transientStatus = null
         }
+    }
+
+    if (showVoiceSettingsDialog) {
+        VoiceModelsDialog(
+            voices = voices,
+            selectedVoiceId = activeVoiceId,
+            onSelectVoice = { activeVoiceId = it },
+            onDownloadVoice = { downloadDefaultVoice() },
+            enableSmartSkipping = enableSmartSkipping,
+            onToggleSmartSkipping = { enableSmartSkipping = it },
+            onDismissRequest = { showVoiceSettingsDialog = false }
+        )
     }
 
     bookToDelete?.let { book ->
@@ -248,6 +292,7 @@ private fun AuralisApp(repository: AuralisRepository) {
             onImportBook = { importLauncher.launch(arrayOf("application/pdf", "application/epub+zip")) },
             onLoadSampleBook = ::loadSampleBook,
             onInstallVoice = ::downloadDefaultVoice,
+            onOpenVoiceSettings = { showVoiceSettingsDialog = true },
             onOpenBook = { selectedBookId = it },
             onDeleteBook = { bookToDelete = it }
         )
@@ -257,12 +302,13 @@ private fun AuralisApp(repository: AuralisRepository) {
             bookId = selectedBookId.orEmpty(),
             onBack = { selectedBookId = null },
             onInstallVoice = ::downloadDefaultVoice,
+            onOpenVoiceSettings = { showVoiceSettingsDialog = true },
             onDeleteBook = { bookToDelete = it }
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun LibraryScreen(
     books: List<BookEntity>,
@@ -271,22 +317,31 @@ private fun LibraryScreen(
     onImportBook: () -> Unit,
     onLoadSampleBook: () -> Unit,
     onInstallVoice: () -> Unit,
+    onOpenVoiceSettings: () -> Unit,
     onOpenBook: (String) -> Unit,
     onDeleteBook: (BookEntity) -> Unit
 ) {
+    var isGridView by rememberSaveable { mutableStateOf(true) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text("Auralis", fontWeight = FontWeight.SemiBold)
-                        Text("Library", style = MaterialTheme.typography.labelMedium)
+                        Text("Library (${books.size})", style = MaterialTheme.typography.labelMedium)
                     }
                 },
                 actions = {
+                    IconButton(onClick = { isGridView = !isGridView }) {
+                        Icon(
+                            if (isGridView) Icons.Rounded.GraphicEq else Icons.Rounded.AutoStories,
+                            contentDescription = "Toggle Grid/List View"
+                        )
+                    }
                     ThemeActionIconButton()
-                    IconButton(onClick = onInstallVoice) {
-                        Icon(Icons.Rounded.Mic, contentDescription = "Install voice")
+                    IconButton(onClick = onOpenVoiceSettings) {
+                        Icon(Icons.Rounded.Mic, contentDescription = "Voice Models & Settings")
                     }
                     FilledIconButton(onClick = onImportBook) {
                         Icon(Icons.Rounded.Add, contentDescription = "Import book")
@@ -304,9 +359,23 @@ private fun LibraryScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            StatusStrip(status = status, voices = voices, onInstallVoice = onInstallVoice)
+            StatusStrip(status = status, voices = voices, onOpenVoiceSettings = onOpenVoiceSettings)
             if (books.isEmpty()) {
                 EmptyLibrary(onImportBook = onImportBook, onLoadSampleBook = onLoadSampleBook)
+            } else if (isGridView) {
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    books.forEach { book ->
+                        BookGridCard(
+                            book = book,
+                            onClick = { onOpenBook(book.id) },
+                            onDelete = { onDeleteBook(book) }
+                        )
+                    }
+                }
             } else {
                 books.forEach { book ->
                     BookRow(
@@ -324,7 +393,7 @@ private fun LibraryScreen(
 private fun StatusStrip(
     status: String?,
     voices: List<VoiceModelEntity>,
-    onInstallVoice: () -> Unit
+    onOpenVoiceSettings: () -> Unit
 ) {
     val voice = voices.firstOrNull { it.id == "kokoro-natural-en" }
     val installedVoice = voice?.takeIf { it.status == "installed" }
@@ -335,13 +404,13 @@ private fun StatusStrip(
         verticalAlignment = Alignment.CenterVertically
     ) {
         AssistChip(
-            onClick = onInstallVoice,
+            onClick = onOpenVoiceSettings,
             label = {
                 Text(
                     when {
-                        installedVoice != null -> installedVoice.displayName
-                        isDownloading -> "Downloading natural voice"
-                        else -> "Download natural voice"
+                        installedVoice != null -> "Voice: ${installedVoice.displayName}"
+                        isDownloading -> "Downloading voice model..."
+                        else -> "Voice Models & Engine Settings"
                     }
                 )
             },
@@ -399,6 +468,148 @@ private fun EmptyLibrary(onImportBook: () -> Unit, onLoadSampleBook: () -> Unit)
 }
 
 @Composable
+private fun BookCoverThumbnail(
+    title: String,
+    format: String,
+    modifier: Modifier = Modifier
+) {
+    val colorPair = remember(title) {
+        val hash = title.hashCode()
+        val gradients = listOf(
+            Pair(Color(0xFF1E293B), Color(0xFF0F172A)), // Midnight Slate
+            Pair(Color(0xFF1E3C72), Color(0xFF2A5298)), // Royal Blue
+            Pair(Color(0xFF0F766E), Color(0xFF134E4A)), // Deep Teal
+            Pair(Color(0xFF581C87), Color(0xFF3B0764)), // Rich Purple
+            Pair(Color(0xFF831843), Color(0xFF500724)), // Wine Crimson
+            Pair(Color(0xFF1F2937), Color(0xFF111827)), // Dark Obsidian
+            Pair(Color(0xFF1C1917), Color(0xFF0C0A09)), // Charcoal Gold
+            Pair(Color(0xFF312E81), Color(0xFF1E1B4B))  // Indigo Dusk
+        )
+        gradients[kotlin.math.abs(hash) % gradients.size]
+    }
+
+    val initials = remember(title) {
+        title.split(Regex("\\s+"))
+            .filter { it.isNotBlank() && it.first().isLetterOrDigit() }
+            .take(2)
+            .map { it.first().uppercaseChar() }
+            .joinToString("")
+            .ifBlank { title.take(2).uppercase() }
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(brush = Brush.verticalGradient(colors = listOf(colorPair.first, colorPair.second)))
+            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        // Book Spine Shadow on Left Edge
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .width(6.dp)
+                .fillMaxHeight()
+                .background(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)
+                    )
+                )
+        )
+
+        // Monogram & Format Badge
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(4.dp)
+        ) {
+            Text(
+                text = initials,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Spacer(Modifier.height(4.dp))
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color.Black.copy(alpha = 0.45f)
+            ) {
+                Text(
+                    text = format.uppercase(),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.sp,
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookGridCard(
+    book: BookEntity,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.width(155.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(
+            Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            BookCoverThumbnail(
+                title = book.title,
+                format = book.format,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+            )
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    book.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        book.author ?: "Unknown",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.DeleteOutline,
+                            contentDescription = "Remove book",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun BookRow(
     book: BookEntity,
     onClick: () -> Unit,
@@ -407,23 +618,54 @@ private fun BookRow(
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Row(
-            Modifier.padding(16.dp),
+            Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Image(
-                painter = painterResource(R.drawable.asset_reader_cover),
-                contentDescription = null,
-                modifier = Modifier.size(width = 48.dp, height = 64.dp)
+            BookCoverThumbnail(
+                title = book.title,
+                format = book.format,
+                modifier = Modifier.size(width = 52.dp, height = 70.dp)
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${book.format.uppercase()}  ${book.importStatus}", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    book.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    book.author ?: "Unknown Author",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            book.format.uppercase(),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    Text(
+                        book.importStatus.lowercase().replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             IconButton(onClick = onDelete) {
                 Icon(
@@ -443,6 +685,7 @@ private fun BookScreen(
     bookId: String,
     onBack: () -> Unit,
     onInstallVoice: () -> Unit,
+    onOpenVoiceSettings: () -> Unit,
     onDeleteBook: (BookEntity) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -459,54 +702,144 @@ private fun BookScreen(
     var mode by rememberSaveable { mutableStateOf("read") }
     var chapterIndex by rememberSaveable(bookId) { mutableIntStateOf(0) }
     var audioJumpTarget by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    var isImmersive by rememberSaveable { mutableStateOf(false) }
+
+    var selectedVoiceId by rememberSaveable { mutableStateOf(com.auralis.audio.VoiceModelRepository.DEFAULT_KOKORO_VOICE_ID) }
+    var enableSmartSkipping by rememberSaveable { mutableStateOf(true) }
+
+    var selectedSlmId by rememberSaveable { mutableStateOf("smollm2-1.7b") }
+    var enableWholeBookScan by rememberSaveable { mutableStateOf(true) }
+    var lastGeneratedSlmId by rememberSaveable { mutableStateOf("smollm2-1.7b") }
+    var lastGeneratedWholeBookScan by rememberSaveable { mutableStateOf(true) }
+    var showSlmSettingsDialog by remember { mutableStateOf(false) }
+    var deepstashRegenCount by remember { mutableIntStateOf(0) }
+
+    val context = LocalContext.current
+    val llmRuntime = remember { com.auralis.ai.OnDeviceLlmRuntime() }
+
+    var deepstashSummaryState by remember { mutableStateOf<com.auralis.ai.DeepstashSummaryResult?>(null) }
+    var isDeepstashLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(book?.title, chapters, selectedSlmId, enableWholeBookScan, deepstashRegenCount) {
+        if (chapters.isNotEmpty()) {
+            isDeepstashLoading = true
+            deepstashSummaryState = null // Instantly clear out previous content
+            kotlinx.coroutines.delay(100)
+
+            val slmSpec = com.auralis.ai.OnDeviceLlmRuntime.AVAILABLE_SLM_MODELS.find { it.id == selectedSlmId }
+                ?: com.auralis.ai.OnDeviceLlmRuntime.AVAILABLE_SLM_MODELS.first()
+            val slmFile = llmRuntime.getModelFile(context.filesDir, selectedSlmId)
+            val status = llmRuntime.checkModelStatus(context.filesDir, selectedSlmId)
+
+            val activeChapters = if (enableWholeBookScan) {
+                chapters
+            } else {
+                chapters.take(6)
+            }
+
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.auralis.ai.DeepstashSummarizer(llmRuntime).generateSummary(
+                    bookTitle = book?.title ?: "Book",
+                    author = book?.author ?: "Unknown Author",
+                    chapters = activeChapters.map { chap -> Pair(chap.title, repository.readChapterText(chap)) },
+                    slmModelFile = if (status == com.auralis.ai.SlmModelStatus.INSTALLED) slmFile else null,
+                    slmModelName = if (status == com.auralis.ai.SlmModelStatus.INSTALLED) "${slmSpec.name} (ONNX SLM)" else "Built-in SLM Engine (Fallback for ${slmSpec.name})"
+                )
+            }
+
+            deepstashSummaryState = result
+            isDeepstashLoading = false
+        }
+    }
+
+    val isSlmChanged = (selectedSlmId != lastGeneratedSlmId || enableWholeBookScan != lastGeneratedWholeBookScan)
 
     val selectedChapter = chapters.getOrNull(chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)))
     LaunchedEffect(selectedChapter?.id) {
         repository.saveReadingPosition(bookId, selectedChapter?.id)
     }
 
+    val showTopControls = !isImmersive || mode != "read"
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                title = {
-                    Column {
-                        Text(book?.title ?: "Book", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${chapters.size} chapters", style = MaterialTheme.typography.labelMedium)
-                    }
-                },
-                actions = {
-                    ThemeActionIconButton()
-                    IconButton(onClick = { mode = "search" }) {
-                        Icon(Icons.Rounded.Search, contentDescription = "Search")
-                    }
-                    IconButton(onClick = onInstallVoice) {
-                        Icon(Icons.Rounded.Download, contentDescription = "Install voice")
-                    }
-                    IconButton(onClick = { book?.let(onDeleteBook) }) {
+            if (showTopControls) {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    title = {
+                        Column {
+                            Text(book?.title ?: "Book", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${chapters.size} chapters", style = MaterialTheme.typography.labelMedium)
+                        }
+                    },
+                    actions = {
+                        ThemeActionIconButton()
+                        IconButton(onClick = { mode = "search" }) {
+                            Icon(Icons.Rounded.Search, contentDescription = "Search")
+                        }
+                        IconButton(onClick = { showSlmSettingsDialog = true }) {
+                            Icon(Icons.Rounded.Psychology, contentDescription = "Book Intelligence & SLM Settings")
+                        }
+                        IconButton(onClick = onOpenVoiceSettings) {
+                            Icon(Icons.Rounded.Mic, contentDescription = "Voice Models & Settings")
+                        }
+                        IconButton(onClick = { book?.let(onDeleteBook) }) {
+                            Icon(
+                                Icons.Rounded.DeleteOutline,
+                                contentDescription = "Remove book",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                )
+            }
+        },
+        floatingActionButton = {
+            AnimatedVisibility(
+                visible = isSlmChanged && mode == "deepstash",
+                enter = fadeIn() + slideInVertically { it / 2 },
+                exit = fadeOut() + slideOutVertically { it / 2 }
+            ) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        lastGeneratedSlmId = selectedSlmId
+                        lastGeneratedWholeBookScan = enableWholeBookScan
+                        deepstashRegenCount++
+                    },
+                    icon = {
                         Icon(
-                            Icons.Rounded.DeleteOutline,
-                            contentDescription = "Remove book",
-                            tint = MaterialTheme.colorScheme.error
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Regenerate Deepstash Summary"
                         )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
+                    },
+                    text = {
+                        Text(
+                            text = "New SLM Selected • Tap to Regenerate",
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                    },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    elevation = FloatingActionButtonDefaults.elevation(8.dp)
+                )
+            }
         }
     ) { padding ->
         Column(
             Modifier
-                .padding(padding)
+                .padding(if (showTopControls) padding else PaddingValues(top = 8.dp, bottom = 8.dp))
                 .fillMaxSize()
-                .padding(horizontal = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = if (isImmersive && mode == "read") 10.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (isImmersive && mode == "read") 4.dp else 10.dp)
         ) {
-            ModeTabs(selected = mode, onSelected = { mode = it })
+            if (showTopControls) {
+                ModeTabs(selected = mode, onSelected = { mode = it })
+            }
             when (mode) {
                 "audio" -> AudioPane(
                     bookId = bookId,
@@ -534,7 +867,26 @@ private fun BookScreen(
                         }
                     },
                     onInstallVoice = onInstallVoice,
+                    onOpenVoiceSettings = onOpenVoiceSettings,
                     onPrepare = { repository.prepareAudiobook(bookId) }
+                )
+                "voices" -> VoiceModelsSettingsPane(
+                    voices = voices,
+                    selectedVoiceId = selectedVoiceId,
+                    onSelectVoice = { selectedVoiceId = it },
+                    onDownloadVoice = { onInstallVoice() },
+                    enableSmartSkipping = enableSmartSkipping,
+                    onToggleSmartSkipping = { enableSmartSkipping = it }
+                )
+                "deepstash" -> DeepstashPane(
+                    summary = deepstashSummaryState,
+                    isLoading = isDeepstashLoading,
+                    onOpenSlmSettings = { showSlmSettingsDialog = true },
+                    onRegenerate = {
+                        lastGeneratedSlmId = selectedSlmId
+                        lastGeneratedWholeBookScan = enableWholeBookScan
+                        deepstashRegenCount++
+                    }
                 )
                 "details" -> DetailsPane(metadata, characters)
                 "notes" -> NotesPane(
@@ -565,6 +917,8 @@ private fun BookScreen(
                     chapterCount = chapters.size,
                     chapterIndex = chapterIndex,
                     text = selectedChapter?.let(repository::readChapterText).orEmpty(),
+                    isImmersive = isImmersive,
+                    onToggleImmersive = { isImmersive = !isImmersive },
                     onPrevious = { chapterIndex = (chapterIndex - 1).coerceAtLeast(0) },
                     onNext = { chapterIndex = (chapterIndex + 1).coerceAtMost((chapters.size - 1).coerceAtLeast(0)) },
                     onSelectChapter = { index -> chapterIndex = index },
@@ -598,14 +952,33 @@ private fun BookScreen(
                 )
             }
         }
+
+        if (showSlmSettingsDialog) {
+            SlmModelSettingsDialog(
+                selectedSlmId = selectedSlmId,
+                onSelectSlm = { selectedSlmId = it },
+                enableWholeBookScan = enableWholeBookScan,
+                onToggleWholeBookScan = { enableWholeBookScan = it },
+                enableSmartSkipping = enableSmartSkipping,
+                onToggleSmartSkipping = { enableSmartSkipping = it },
+                onDismissRequest = { showSlmSettingsDialog = false }
+            )
+        }
     }
 }
 
 @Composable
 private fun ModeTabs(selected: String, onSelected: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         ModeButton("read", "Read", Icons.Rounded.Book, selected, onSelected)
         ModeButton("audio", "Audio", Icons.Rounded.Headphones, selected, onSelected)
+        ModeButton("deepstash", "Deepstash", Icons.Rounded.AutoStories, selected, onSelected)
+        ModeButton("voices", "Voice & Models", Icons.Rounded.Mic, selected, onSelected)
         ModeButton("details", "Details", Icons.Rounded.GraphicEq, selected, onSelected)
         ModeButton("notes", "Notes", Icons.Rounded.Star, selected, onSelected)
     }
@@ -642,6 +1015,8 @@ private fun ReaderPane(
     chapterCount: Int,
     chapterIndex: Int,
     text: String,
+    isImmersive: Boolean,
+    onToggleImmersive: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onSelectChapter: (Int) -> Unit,
@@ -717,30 +1092,40 @@ private fun ReaderPane(
         }
     }
 
+    fun speakCadences(cadences: List<SentenceCadence>) {
+        val engine = ttsEngine ?: return
+        if (cadences.isEmpty()) return
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val currentVol = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
+        if (currentVol == 0 && audioManager != null) {
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (maxVol * 0.75f).toInt().coerceAtLeast(1), 0)
+        }
+
+        engine.stop()
+        cadences.forEachIndexed { index, cadence ->
+            val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            val params = Bundle().apply {
+                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+            }
+            engine.setPitch(cadence.pitch)
+            engine.setSpeechRate(cadence.speechRate)
+            engine.speak(cadence.text, queueMode, params, "live_cadence_$index")
+            if (cadence.pauseAfterMillis > 0) {
+                engine.playSilentUtterance(cadence.pauseAfterMillis, TextToSpeech.QUEUE_ADD, "live_pause_$index")
+            }
+        }
+        isLiveSpeaking = true
+    }
+
     fun toggleLiveReadAloud() {
         val engine = ttsEngine ?: return
         if (isLiveSpeaking) {
             engine.stop()
             isLiveSpeaking = false
         } else {
-            if (text.isNotBlank()) {
-                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                val currentVol = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
-                if (currentVol == 0 && audioManager != null) {
-                    val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (maxVol * 0.75f).toInt().coerceAtLeast(1), 0)
-                }
-
-                val params = Bundle().apply {
-                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-                }
-                val chunks = text.chunked(2500)
-                chunks.forEachIndexed { index, chunk ->
-                    val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                    engine.speak(chunk, queueMode, params, "live_reader_$index")
-                }
-                isLiveSpeaking = true
-            }
+            val cadences = HumanSpeechPacer.analyze(text)
+            speakCadences(cadences)
         }
     }
 
@@ -784,163 +1169,228 @@ private fun ReaderPane(
         )
     }
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onPrevious, enabled = chapterIndex > 0) { Text("Previous") }
-            Box(Modifier.weight(1f)) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { if (chapters.isNotEmpty()) showChapterDropdown = true }
-                        .padding(vertical = 2.dp, horizontal = 4.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            chapter?.title ?: "No readable text",
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = "Select Chapter", modifier = Modifier.size(20.dp))
-                    }
-                    Text("${chapterIndex + 1} of ${chapterCount.coerceAtLeast(1)}", style = MaterialTheme.typography.labelMedium)
-                }
-                DropdownMenu(
-                    expanded = showChapterDropdown,
-                    onDismissRequest = { showChapterDropdown = false }
-                ) {
-                    chapters.forEachIndexed { idx, ch ->
-                        DropdownMenuItem(
-                            text = { Text("Chapter ${idx + 1}: ${ch.title}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            onClick = {
-                                onSelectChapter(idx)
-                                showChapterDropdown = false
-                            }
-                        )
-                    }
-                }
-            }
-            OutlinedButton(onClick = onNext, enabled = chapterIndex < chapterCount - 1) { Text("Next") }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalButton(
-                onClick = {
-                    bookmarkLabel = chapter?.title ?: "Chapter ${chapterIndex + 1}"
-                    bookmarkNote = ""
-                    showBookmarkDialog = true
-                },
-                enabled = chapter != null
-            ) {
-                Icon(Icons.Rounded.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Bookmark")
-            }
-            FilledTonalButton(onClick = onHighlight, enabled = chapter != null) { Text("Highlight") }
-
-            Spacer(Modifier.weight(1f))
-
-            // Instant Live Read Aloud Button
-            Button(
-                onClick = ::toggleLiveReadAloud,
-                enabled = isTtsReady && text.isNotBlank()
-            ) {
-                Icon(
-                    if (isLiveSpeaking) Icons.Rounded.Stop else Icons.Rounded.RecordVoiceOver,
-                    contentDescription = if (isLiveSpeaking) "Stop Narration" else "Read Aloud",
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(if (isLiveSpeaking) "Stop Speaking" else "Read Aloud")
-            }
-        }
-
-        if (isLiveSpeaking) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MiniEqualizerBars(isPlaying = true, color = MaterialTheme.colorScheme.primary)
-                    Text(
-                        "Reading chapter aloud with live voice synthesizer...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { ttsEngine?.stop(); isLiveSpeaking = false }) {
-                        Icon(Icons.Rounded.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-        }
-
+    Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (paragraphs.isEmpty()) {
-                Text(
-                    text = "This file did not expose selectable text. OCR support is reserved for the next implementation pass.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontFamily = FontFamily.Serif,
-                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.35
-                )
-            } else {
-                paragraphs.forEach { para ->
-                    Surface(
-                        onClick = {
-                            if (isLiveSpeaking) {
-                                ttsEngine?.stop()
-                                val remainingText = text.substring(para.startOffset)
-                                val params = Bundle().apply {
-                                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-                                }
-                                val chunks = remainingText.chunked(2500)
-                                chunks.forEachIndexed { index, chunk ->
-                                    val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                                    ttsEngine?.speak(chunk, queueMode, params, "live_reader_tap_$index")
-                                }
-                                isLiveSpeaking = true
-                            }
-                            chapter?.id?.let { chapId ->
-                                onTextClicked(chapId, para.startOffset)
-                            }
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                        modifier = Modifier.fillMaxWidth()
+            // Sleek E-Reader Header Control Bar
+            AnimatedVisibility(
+                visible = !isImmersive,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
+                    shadowElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 4.dp)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.Top
+                        IconButton(
+                            onClick = onPrevious,
+                            enabled = chapterIndex > 0,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous Chapter")
+                        }
+
+                        Box(Modifier.weight(1f)) {
+                            Surface(
+                                onClick = { if (chapters.isNotEmpty()) showChapterDropdown = true },
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = chapter?.title ?: "Document Reader",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "(${chapterIndex + 1}/${chapterCount.coerceAtLeast(1)})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Icon(
+                                        Icons.Rounded.ArrowDropDown,
+                                        contentDescription = "Select Chapter",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = showChapterDropdown,
+                                onDismissRequest = { showChapterDropdown = false }
+                            ) {
+                                chapters.forEachIndexed { idx, ch ->
+                                    DropdownMenuItem(
+                                        text = { Text("${idx + 1}. ${ch.title}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        onClick = {
+                                            onSelectChapter(idx)
+                                            showChapterDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onNext,
+                            enabled = chapterIndex < chapterCount - 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next Chapter")
+                        }
+
+                        IconButton(
+                            onClick = {
+                                bookmarkLabel = chapter?.title ?: "Chapter ${chapterIndex + 1}"
+                                bookmarkNote = ""
+                                showBookmarkDialog = true
+                            },
+                            enabled = chapter != null,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Rounded.BookmarkAdd, contentDescription = "Bookmark", modifier = Modifier.size(18.dp))
+                        }
+
+                        IconButton(
+                            onClick = ::toggleLiveReadAloud,
+                            enabled = isTtsReady && text.isNotBlank(),
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
-                                Icons.Rounded.PlayCircleOutline,
-                                contentDescription = "Play audio from this paragraph",
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .padding(top = 2.dp)
+                                if (isLiveSpeaking) Icons.Rounded.Stop else Icons.Rounded.RecordVoiceOver,
+                                contentDescription = if (isLiveSpeaking) "Stop Narration" else "Read Aloud",
+                                tint = if (isLiveSpeaking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(18.dp)
                             )
-                            Text(
-                                text = para.text,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontFamily = FontFamily.Serif,
-                                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.35,
-                                modifier = Modifier.weight(1f)
+                        }
+
+                        IconButton(
+                            onClick = onToggleImmersive,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                                contentDescription = if (isImmersive) "Exit Fullscreen" else "Focus Mode",
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
+                }
+            }
+
+            if (isLiveSpeaking) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MiniEqualizerBars(isPlaying = true, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Reading aloud with HumanSpeechPacer...",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { ttsEngine?.stop(); isLiveSpeaking = false }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Rounded.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+
+            // Clean Prose Book Reader Canvas
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                if (paragraphs.isEmpty()) {
+                    Box(
+                        Modifier.fillMaxSize().padding(top = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "This document section does not contain extractable text.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    paragraphs.forEach { para ->
+                        Text(
+                            text = para.text,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 17.sp,
+                                lineHeight = 27.sp,
+                                fontFamily = FontFamily.Serif,
+                                color = MaterialTheme.colorScheme.onBackground
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (isLiveSpeaking) {
+                                        val remainingText = text.substring(para.startOffset)
+                                        val cadences = HumanSpeechPacer.analyze(remainingText)
+                                        speakCadences(cadences)
+                                    }
+                                    chapter?.id?.let { chapId ->
+                                        onTextClicked(chapId, para.startOffset)
+                                    }
+                                }
+                                .padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Floating pill button to toggle Focus Mode in Immersive state
+        if (isImmersive) {
+            Surface(
+                onClick = onToggleImmersive,
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.9f),
+                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 12.dp, end = 12.dp)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(Icons.Rounded.FullscreenExit, contentDescription = "Exit Fullscreen", modifier = Modifier.size(16.dp))
+                    Text("Exit Fullscreen", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -962,6 +1412,7 @@ private fun AudioPane(
     onAddAudioBookmark: (Int, Long, String?, String, String?) -> Unit,
     onDeleteBookmark: (Long) -> Unit,
     onInstallVoice: () -> Unit,
+    onOpenVoiceSettings: () -> Unit,
     onPrepare: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1284,10 +1735,10 @@ private fun AudioPane(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilledTonalButton(onClick = onInstallVoice) {
+            FilledTonalButton(onClick = onOpenVoiceSettings) {
                 Icon(Icons.Rounded.Mic, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (installedVoice == null) "Download voice" else "Voice ready")
+                Text("Voice Models & Settings")
             }
             Button(onClick = onPrepare, enabled = installedVoice != null && synthesisReady) {
                 Icon(Icons.Rounded.PlayArrow, contentDescription = null)
@@ -1318,9 +1769,9 @@ private fun AudioPane(
             ) {
                 Icon(
                     imageVector = when {
-                        deviceVolume <= 0.01f -> Icons.Rounded.VolumeOff
-                        deviceVolume < 0.5f -> Icons.Rounded.VolumeDown
-                        else -> Icons.Rounded.VolumeUp
+                        deviceVolume <= 0.01f -> Icons.AutoMirrored.Rounded.VolumeOff
+                        deviceVolume < 0.5f -> Icons.AutoMirrored.Rounded.VolumeDown
+                        else -> Icons.AutoMirrored.Rounded.VolumeUp
                     },
                     contentDescription = "Volume",
                     tint = MaterialTheme.colorScheme.primary,
@@ -1526,7 +1977,7 @@ private fun AudioPane(
                             enabled = segments.isNotEmpty()
                         ) {
                             Icon(
-                                Icons.Rounded.LastPage,
+                                Icons.AutoMirrored.Rounded.LastPage,
                                 contentDescription = "Next Chapter",
                                 modifier = Modifier.size(24.dp)
                             )
@@ -1684,7 +2135,7 @@ private fun AudioPane(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else Color.White
+                        containerColor = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                     ),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
                 ) {
@@ -1697,7 +2148,7 @@ private fun AudioPane(
                             MiniEqualizerBars(isPlaying = true, color = MaterialTheme.colorScheme.primary)
                         } else {
                             Icon(
-                                imageVector = if (isCurrent) Icons.Rounded.VolumeUp else Icons.Rounded.PlayArrow,
+                                imageVector = if (isCurrent) Icons.AutoMirrored.Rounded.VolumeUp else Icons.Rounded.PlayArrow,
                                 contentDescription = null,
                                 tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )

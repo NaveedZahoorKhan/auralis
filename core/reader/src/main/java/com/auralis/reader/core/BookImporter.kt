@@ -94,8 +94,14 @@ class BookImporter(
                 if (!entry.isDirectory && (lowerName.endsWith(".xhtml") || lowerName.endsWith(".html") || lowerName.endsWith(".htm"))) {
                     val html = zip.readBytes().toString(Charsets.UTF_8)
                     val text = htmlToText(html).normalizeWhitespace()
-                    if (text.length > 80) {
-                        sections += NamedText(titleFromPath(entry.name), text)
+                    if (text.length > 50) {
+                        val parsedHeading = extractHtmlHeading(html)
+                        val title = when {
+                            lowerName.contains("toc") || lowerName.contains("contents") -> "Table of Contents"
+                            !parsedHeading.isNullOrBlank() -> parsedHeading
+                            else -> titleFromPath(entry.name)
+                        }
+                        sections += NamedText(title, text)
                     }
                 }
             }
@@ -109,6 +115,15 @@ class BookImporter(
             chapters = writeChapters(bookDir, bookId, sections),
             status = ImportStatus.Ready
         )
+    }
+
+    private fun extractHtmlHeading(html: String): String? {
+        val h1 = Regex("(?is)<h1[^>]*>(.*?)</h1>").find(html)?.groupValues?.get(1)
+        val h2 = Regex("(?is)<h2[^>]*>(.*?)</h2>").find(html)?.groupValues?.get(1)
+        val title = Regex("(?is)<title[^>]*>(.*?)</title>").find(html)?.groupValues?.get(1)
+        val raw = (h1 ?: h2 ?: title)?.let { htmlToText(it).trim() } ?: return null
+        val clean = raw.replace(Regex("\\s+"), " ").trim()
+        return if (clean.length in 3..90 && !clean.lowercase().contains("untitled")) clean else null
     }
 
     private fun writeChapters(
@@ -136,18 +151,30 @@ class BookImporter(
     }
 
     private fun splitIntoBookSections(text: String): List<NamedText> {
-        val marker = Regex("(?im)(^\\s*(chapter|book|part)\\s+([\\w\\-.' ]{1,60})$)")
-        val matches = marker.findAll(text).toList()
+        // Advanced multi-pattern chapter and TOC header matcher
+        val marker = Regex("(?im)(^\\s*(table of contents|contents|index of chapters|chapter|book|part|section|unit|module|introduction|preface|foreword|epilogue|conclusion|appendix)\\b[\\w\\-.' :]{0,80}$)")
+        val numberedMarker = Regex("(?im)(^\\s*([0-9]{1,2}|[IVXLCDM]{1,6})[.\\s–-]+([A-Z][\\w\\-.' :]{2,80})$)")
+
+        var matches = marker.findAll(text).toList()
+        if (matches.size < 2) {
+            matches = numberedMarker.findAll(text).toList()
+        }
+
         if (matches.size < 2) {
             return chunkText(text, 18_000).mapIndexed { index, chunk ->
-                NamedText("Section ${index + 1}", chunk)
+                val isToc = index == 0 && (chunk.take(500).lowercase().contains("contents") || chunk.take(500).lowercase().contains("table of contents"))
+                NamedText(if (isToc) "Table of Contents" else "Section ${index + 1}", chunk)
             }
         }
 
         return matches.mapIndexed { index, match ->
             val start = match.range.first
             val end = matches.getOrNull(index + 1)?.range?.first ?: text.length
-            val title = match.value.trim().take(80)
+            var title = match.value.trim().take(80)
+            val lowerTitle = title.lowercase()
+            if (lowerTitle.contains("contents") || lowerTitle.contains("table of contents")) {
+                title = "Table of Contents"
+            }
             NamedText(title, text.substring(start, end).trim())
         }
     }

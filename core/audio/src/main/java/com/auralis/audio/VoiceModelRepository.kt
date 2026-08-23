@@ -16,28 +16,64 @@ class VoiceModelRepository(
     private val dao: AuralisDao
 ) {
     suspend fun seedCatalog() {
-        val existing = dao.getVoiceModel(DEFAULT_KOKORO_VOICE_ID)
-        installedVoiceFromFiles()?.let {
-            if (existing?.status != "installed" || existing.modelPath != it.modelPath) {
-                dao.upsertVoiceModel(it)
+        val now = System.currentTimeMillis()
+
+        // 1. Kokoro ONNX
+        val existingKokoro = dao.getVoiceModel(DEFAULT_KOKORO_VOICE_ID)
+        val installedKokoro = installedVoiceFromFiles()
+        if (installedKokoro != null) {
+            if (existingKokoro?.status != "installed" || existingKokoro.modelPath != installedKokoro.modelPath) {
+                dao.upsertVoiceModel(installedKokoro)
             }
-            return
+        } else if (existingKokoro == null) {
+            dao.upsertVoiceModel(
+                VoiceModelEntity(
+                    id = DEFAULT_KOKORO_VOICE_ID,
+                    displayName = "Kokoro Natural English (82M)",
+                    language = "en",
+                    runtime = "kokoro-onnx",
+                    status = "available",
+                    modelPath = null,
+                    configPath = null,
+                    sizeBytes = 86_000_000L,
+                    updatedAtMillis = now
+                )
+            )
         }
 
-        val now = System.currentTimeMillis()
-        dao.upsertVoiceModel(
-            VoiceModelEntity(
-                id = DEFAULT_KOKORO_VOICE_ID,
-                displayName = "Kokoro Natural English",
-                language = "en",
-                runtime = "kokoro-onnx",
-                status = "installed",
-                modelPath = null,
-                configPath = null,
-                sizeBytes = 85_000_000L,
-                updatedAtMillis = now
+        // 2. Piper Fast ONNX
+        if (dao.getVoiceModel(PIPER_FAST_VOICE_ID) == null) {
+            dao.upsertVoiceModel(
+                VoiceModelEntity(
+                    id = PIPER_FAST_VOICE_ID,
+                    displayName = "Piper Neural English (Fast)",
+                    language = "en",
+                    runtime = "piper-onnx",
+                    status = "available",
+                    modelPath = null,
+                    configPath = null,
+                    sizeBytes = 28_000_000L,
+                    updatedAtMillis = now
+                )
             )
-        )
+        }
+
+        // 3. Android System Native TTS (Built-in)
+        if (dao.getVoiceModel(SYSTEM_NATIVE_VOICE_ID) == null) {
+            dao.upsertVoiceModel(
+                VoiceModelEntity(
+                    id = SYSTEM_NATIVE_VOICE_ID,
+                    displayName = "Android System Native TTS",
+                    language = "en",
+                    runtime = "android-tts",
+                    status = "installed",
+                    modelPath = null,
+                    configPath = null,
+                    sizeBytes = 0L,
+                    updatedAtMillis = now
+                )
+            )
+        }
     }
 
     suspend fun installOnnxVoice(uri: Uri, displayName: String? = null): VoiceModelEntity {
@@ -56,7 +92,7 @@ class VoiceModelRepository(
             runtime = "kokoro-onnx",
             status = "installed",
             modelPath = modelFile.absolutePath,
-            configPath = null,
+            configPath = voiceDir.absolutePath,
             sizeBytes = modelFile.length(),
             updatedAtMillis = System.currentTimeMillis()
         )
@@ -124,12 +160,12 @@ class VoiceModelRepository(
         val configFile = File(voiceDir, "config.json")
         val voiceFile = File(voiceDir, "af.bin")
         val selectedModelFile = when {
-            quantizedModelFile.length() >= KOKORO_MODEL_BYTES -> quantizedModelFile
-            modelFile.length() >= LEGACY_KOKORO_Q8F16_MODEL_BYTES -> null
+            quantizedModelFile.length() > 0L -> quantizedModelFile
+            modelFile.length() > 0L -> modelFile
             else -> null
         } ?: return null
-        if (configFile.length() < KOKORO_CONFIG_BYTES) return null
-        if (voiceFile.length() < KOKORO_VOICE_BYTES) return null
+        if (!configFile.exists() || configFile.length() == 0L) return null
+        if (!voiceFile.exists() || voiceFile.length() == 0L) return null
         return VoiceModelEntity(
             id = DEFAULT_KOKORO_VOICE_ID,
             displayName = "Kokoro Natural English",
@@ -190,6 +226,8 @@ class VoiceModelRepository(
 
     companion object {
         const val DEFAULT_KOKORO_VOICE_ID = "kokoro-natural-en"
+        const val PIPER_FAST_VOICE_ID = "piper-fast-en"
+        const val SYSTEM_NATIVE_VOICE_ID = "system-native-tts"
         private const val DOWNLOAD_ATTEMPTS = 5
         private const val KOKORO_MODEL_FILE = "model_quantized.onnx"
         private const val KOKORO_MODEL_BYTES = 92_361_116L
