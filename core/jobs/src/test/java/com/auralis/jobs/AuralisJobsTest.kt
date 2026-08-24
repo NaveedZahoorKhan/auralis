@@ -1,7 +1,6 @@
 package com.auralis.jobs
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,5 +33,10 @@ class AuralisJobsTest {
         assertEquals("tag_database_sync", AuralisJobsScheduler.TAG_DATABASE_SYNC)
         assertEquals("tag_document_processing", AuralisJobsScheduler.TAG_DOCUMENT_PROCESSING)
         assertEquals("tag_audiobook_generation", AuralisJobsScheduler.TAG_AUDIOBOOK_GENERATION)
+    }
+
+    @Test
+    fun audiobookGenerationWorker_constantsVerification() {
+        assertEquals("book_id", AudiobookGenerationWorker.KEY_BOOK_ID)
     }
 }
