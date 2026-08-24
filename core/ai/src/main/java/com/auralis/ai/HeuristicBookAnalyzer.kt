@@ -3,6 +3,23 @@ package com.auralis.ai
 import java.util.Locale
 
 class HeuristicBookAnalyzer : LocalBookAnalyzer {
+
+    companion object {
+        private val GENRE_TERMS = mapOf(
+            "mystery" to listOf("detective", "murder", "clue", "investigation", "case"),
+            "fantasy" to listOf("kingdom", "sword", "magic", "dragon", "wizard"),
+            "science fiction" to listOf("planet", "spaceship", "android", "colony", "galaxy"),
+            "romance" to listOf("heart", "kiss", "beloved", "marriage", "desire"),
+            "history" to listOf("empire", "war", "century", "king", "revolution")
+        ).mapValues { (_, terms) -> terms.map { Regex("\\b$it\\b") } }
+
+        private val DARK_TERMS = listOf("shadow", "fear", "death", "cold", "blood", "alone").map { Regex("\\b$it\\b") }
+        private val WARM_TERMS = listOf("warm", "smile", "home", "friend", "laugh", "hope").map { Regex("\\b$it\\b") }
+        private val URGENT_TERMS = listOf("ran", "suddenly", "shouted", "hurry", "escape", "danger").map { Regex("\\b$it\\b") }
+
+        private val CHARACTER_REGEX = Regex("\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})?\\b")
+    }
+
     override suspend fun analyze(input: BookAnalysisInput): BookAnalysisResult {
         val sample = input.textSample.take(80_000)
         val lower = sample.lowercase(Locale.US)
@@ -30,20 +47,14 @@ class HeuristicBookAnalyzer : LocalBookAnalyzer {
     }
 
     private fun detectGenre(lower: String): String {
-        val scores = mapOf(
-            "mystery" to listOf("detective", "murder", "clue", "investigation", "case"),
-            "fantasy" to listOf("kingdom", "sword", "magic", "dragon", "wizard"),
-            "science fiction" to listOf("planet", "spaceship", "android", "colony", "galaxy"),
-            "romance" to listOf("heart", "kiss", "beloved", "marriage", "desire"),
-            "history" to listOf("empire", "war", "century", "king", "revolution")
-        ).mapValues { (_, terms) -> terms.sumOf { term -> Regex("\\b$term\\b").findAll(lower).count() } }
+        val scores = GENRE_TERMS.mapValues { (_, regexes) -> regexes.sumOf { regex -> regex.findAll(lower).count() } }
         return scores.maxByOrNull { it.value }?.takeIf { it.value > 1 }?.key ?: "literary"
     }
 
     private fun detectTone(lower: String): String {
-        val dark = listOf("shadow", "fear", "death", "cold", "blood", "alone").sumOf { Regex("\\b$it\\b").findAll(lower).count() }
-        val warm = listOf("warm", "smile", "home", "friend", "laugh", "hope").sumOf { Regex("\\b$it\\b").findAll(lower).count() }
-        val urgent = listOf("ran", "suddenly", "shouted", "hurry", "escape", "danger").sumOf { Regex("\\b$it\\b").findAll(lower).count() }
+        val dark = DARK_TERMS.sumOf { it.findAll(lower).count() }
+        val warm = WARM_TERMS.sumOf { it.findAll(lower).count() }
+        val urgent = URGENT_TERMS.sumOf { it.findAll(lower).count() }
         return when {
             urgent >= dark && urgent >= warm && urgent > 2 -> "urgent"
             dark > warm && dark > 2 -> "tense"
@@ -57,7 +68,7 @@ class HeuristicBookAnalyzer : LocalBookAnalyzer {
             "The", "A", "An", "Chapter", "Book", "Part", "When", "Then", "There", "This",
             "That", "He", "She", "They", "It", "I", "We", "You", "But", "And", "For"
         )
-        val counts = Regex("\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})?\\b")
+        val counts = CHARACTER_REGEX
             .findAll(sample)
             .map { it.value.trim() }
             .filterNot { it in commonWords }
