@@ -2254,6 +2254,9 @@ private fun WaveformVisualizer(
     val sampleCount = 48
     val baseAmplitudes = remember(segmentId) {
         val hash = abs(segmentId.hashCode())
+        // Security suppression: java.util.Random is intentionally used here instead of SecureRandom
+        // because we require a deterministic pseudorandom sequence for consistent UI waveform rendering based on the segmentId seed.
+        @android.annotation.SuppressLint("SecureRandom")
         val random = java.util.Random(hash.toLong())
         FloatArray(sampleCount) { i ->
             val factor = 0.2f + 0.8f * random.nextFloat()
