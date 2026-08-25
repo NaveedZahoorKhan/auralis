@@ -29,21 +29,30 @@ class HeuristicBookAnalyzer : LocalBookAnalyzer {
         )
     }
 
+    companion object {
+        private val genreRegexes = mapOf(
+            "mystery" to Regex("\\b(?:detective|murder|clue|investigation|case)\\b"),
+            "fantasy" to Regex("\\b(?:kingdom|sword|magic|dragon|wizard)\\b"),
+            "science fiction" to Regex("\\b(?:planet|spaceship|android|colony|galaxy)\\b"),
+            "romance" to Regex("\\b(?:heart|kiss|beloved|marriage|desire)\\b"),
+            "history" to Regex("\\b(?:empire|war|century|king|revolution)\\b")
+        )
+        private val darkRegex = Regex("\\b(?:shadow|fear|death|cold|blood|alone)\\b")
+        private val warmRegex = Regex("\\b(?:warm|smile|home|friend|laugh|hope)\\b")
+        private val urgentRegex = Regex("\\b(?:ran|suddenly|shouted|hurry|escape|danger)\\b")
+
+        private val characterNameRegex = Regex("\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})?\\b")
+    }
+
     private fun detectGenre(lower: String): String {
-        val scores = mapOf(
-            "mystery" to listOf("detective", "murder", "clue", "investigation", "case"),
-            "fantasy" to listOf("kingdom", "sword", "magic", "dragon", "wizard"),
-            "science fiction" to listOf("planet", "spaceship", "android", "colony", "galaxy"),
-            "romance" to listOf("heart", "kiss", "beloved", "marriage", "desire"),
-            "history" to listOf("empire", "war", "century", "king", "revolution")
-        ).mapValues { (_, terms) -> terms.sumOf { term -> Regex("\\b$term\\b").findAll(lower).count() } }
+        val scores = genreRegexes.mapValues { (_, regex) -> regex.findAll(lower).count() }
         return scores.maxByOrNull { it.value }?.takeIf { it.value > 1 }?.key ?: "literary"
     }
 
     private fun detectTone(lower: String): String {
-        val dark = listOf("shadow", "fear", "death", "cold", "blood", "alone").sumOf { Regex("\\b$it\\b").findAll(lower).count() }
-        val warm = listOf("warm", "smile", "home", "friend", "laugh", "hope").sumOf { Regex("\\b$it\\b").findAll(lower).count() }
-        val urgent = listOf("ran", "suddenly", "shouted", "hurry", "escape", "danger").sumOf { Regex("\\b$it\\b").findAll(lower).count() }
+        val dark = darkRegex.findAll(lower).count()
+        val warm = warmRegex.findAll(lower).count()
+        val urgent = urgentRegex.findAll(lower).count()
         return when {
             urgent >= dark && urgent >= warm && urgent > 2 -> "urgent"
             dark > warm && dark > 2 -> "tense"
@@ -57,7 +66,7 @@ class HeuristicBookAnalyzer : LocalBookAnalyzer {
             "The", "A", "An", "Chapter", "Book", "Part", "When", "Then", "There", "This",
             "That", "He", "She", "They", "It", "I", "We", "You", "But", "And", "For"
         )
-        val counts = Regex("\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})?\\b")
+        val counts = characterNameRegex
             .findAll(sample)
             .map { it.value.trim() }
             .filterNot { it in commonWords }
