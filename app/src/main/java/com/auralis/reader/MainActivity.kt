@@ -393,7 +393,7 @@ private fun LibraryScreen(
         ) {
             StatusStrip(status = status, voices = voices, onOpenVoiceSettings = onOpenVoiceSettings)
             if (books.isEmpty()) {
-                EmptyLibrary(onImportBook = onImportBook, onLoadSampleBook = onLoadSampleBook)
+                EmptyLibrary(onImportBook = onImportBook, onLoadSampleBook = onLoadSampleBook, isBusy = status != null)
             } else if (isGridView) {
                 androidx.compose.foundation.layout.FlowRow(
                     modifier = Modifier.fillMaxWidth(),
@@ -447,15 +447,22 @@ private fun StatusStrip(
                 )
             },
             leadingIcon = {
-                Icon(
-                    when {
-                        installedVoice != null -> Icons.Rounded.CheckCircle
-                        isDownloading -> Icons.Rounded.GraphicEq
-                        else -> Icons.Rounded.Download
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                if (isDownloading) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Icon(
+                        when {
+                            installedVoice != null -> Icons.Rounded.CheckCircle
+                            else -> Icons.Rounded.Download
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         )
         if (status != null) {
@@ -463,7 +470,16 @@ private fun StatusStrip(
                 onClick = {},
                 label = { Text(status) },
                 leadingIcon = {
-                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+                    val isBusy = status.contains("Importing", ignoreCase = true) || status.contains("Loading", ignoreCase = true) || status.contains("Downloading", ignoreCase = true)
+                    if (isBusy) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
                 }
             )
         }
@@ -471,7 +487,7 @@ private fun StatusStrip(
 }
 
 @Composable
-private fun EmptyLibrary(onImportBook: () -> Unit, onLoadSampleBook: () -> Unit) {
+private fun EmptyLibrary(onImportBook: () -> Unit, onLoadSampleBook: () -> Unit, isBusy: Boolean = false) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -485,12 +501,12 @@ private fun EmptyLibrary(onImportBook: () -> Unit, onLoadSampleBook: () -> Unit)
                 modifier = Modifier.size(132.dp)
             )
             Text("No books yet", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            FilledTonalButton(onClick = onImportBook) {
+            FilledTonalButton(onClick = onImportBook, enabled = !isBusy) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Import PDF or EPUB")
             }
-            OutlinedButton(onClick = onLoadSampleBook) {
+            OutlinedButton(onClick = onLoadSampleBook, enabled = !isBusy) {
                 Icon(Icons.Rounded.AutoStories, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Load Sample Book (The Time Machine)")
