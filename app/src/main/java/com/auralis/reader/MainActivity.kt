@@ -2817,9 +2817,27 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
             },
             label = { Text("Search") }
         )
-        matches.forEach { (title, excerpt) ->
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(excerpt, style = MaterialTheme.typography.bodyMedium)
+        if (matches.isNotEmpty()) {
+            matches.forEach { (title, excerpt) ->
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Text(excerpt, style = MaterialTheme.typography.bodyMedium)
+            }
+        } else if (query.isNotEmpty() && query.length < 3) {
+            Text(
+                text = "Type at least 3 characters to search",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp).fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        } else if (query.length >= 3) {
+            Text(
+                text = "No matches found for \"$query\"",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp).fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 }
