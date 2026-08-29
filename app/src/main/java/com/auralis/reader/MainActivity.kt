@@ -1797,7 +1797,15 @@ private fun AudioPane(
                 Text("Voice Models & Settings")
             }
             Button(onClick = onPrepare, enabled = installedVoice != null && synthesisReady) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                if (job?.status == "running") {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                }
                 Spacer(Modifier.width(8.dp))
                 Text(
                     when {
