@@ -2807,7 +2807,8 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+            placeholder = { Text("Search book contents...") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = "Search icon") },
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { query = "" }) {
@@ -2817,9 +2818,45 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
             },
             label = { Text("Search") }
         )
+
+        if (query.isNotEmpty() && query.length < 3) {
+            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "Enter at least 3 characters to search",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else if (query.length >= 3 && matches.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        Icons.Rounded.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        "No results found for \"$query\"",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
         matches.forEach { (title, excerpt) ->
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(excerpt, style = MaterialTheme.typography.bodyMedium)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(title, fontWeight = FontWeight.SemiBold)
+                    Text(excerpt, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
     }
 }
