@@ -7,3 +7,6 @@
 ## 2026-08-25 - Added Clear Button to Search Field
 **Learning:** Added a clear button to a search field to improve micro-UX in Jetpack Compose, including an appropriate `contentDescription` for screen reader accessibility. It's a standard pattern that relies on existing material icons and button components.
 **Action:** When adding standard interactive elements (like clear buttons), ensure they conditionally render based on state (e.g. only show when query is not empty) and always include descriptive accessibility text for screen readers.
+## 2024-08-26 - Search Minimum Character Feedback
+**Learning:** The app's search functionality had a hidden 3-character minimum requirement, leaving users without feedback for short queries or empty results. Silent failures in forms or searches break user trust.
+**Action:** Always provide inline helper text for input constraints (like minimum characters) and explicit empty states when queries return zero results.
