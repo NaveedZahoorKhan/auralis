@@ -112,6 +112,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -246,7 +247,7 @@ private fun AuralisApp(repository: AuralisRepository, pendingIntentUri: Uri? = n
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                transientStatus = "Importing book"
+                transientStatus = "Importing book..."
                 selectedBookId = runCatching { repository.importBook(uri) }
                     .onFailure { transientStatus = it.message ?: "Import failed" }
                     .getOrNull()
@@ -447,25 +448,46 @@ private fun StatusStrip(
                 )
             },
             leadingIcon = {
-                Icon(
-                    when {
-                        installedVoice != null -> Icons.Rounded.CheckCircle
-                        isDownloading -> Icons.Rounded.GraphicEq
-                        else -> Icons.Rounded.Download
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                if (isDownloading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        when {
+                            installedVoice != null -> Icons.Rounded.CheckCircle
+                            else -> Icons.Rounded.Download
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         )
         if (status != null) {
-            AssistChip(
-                onClick = {},
-                label = { Text(status) },
-                leadingIcon = {
-                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (status.endsWith("...")) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    } else {
+                        Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                    Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
-            )
+            }
         }
     }
 }
