@@ -7,3 +7,7 @@
 ## 2026-08-25 - Added Clear Button to Search Field
 **Learning:** Added a clear button to a search field to improve micro-UX in Jetpack Compose, including an appropriate `contentDescription` for screen reader accessibility. It's a standard pattern that relies on existing material icons and button components.
 **Action:** When adding standard interactive elements (like clear buttons), ensure they conditionally render based on state (e.g. only show when query is not empty) and always include descriptive accessibility text for screen readers.
+
+## 2024-05-24 - Improve Search Keyboard Interaction and Empty States
+**Learning:** Users can get stuck searching if the soft keyboard doesn't dismiss easily, and an abrupt "nothing found" experience can be jarring. Meaningful empty states before typing and after searching improve UX dramatically.
+**Action:** Added `ImeAction.Search` and programmatic keyboard hiding to inputs. Added dedicated empty states for when the search query is too short, and when no results are found, matching existing app styles.
