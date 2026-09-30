@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -156,6 +158,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -166,6 +169,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -1196,12 +1201,14 @@ private fun ReaderPane(
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Label") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note (Optional)") },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -1707,12 +1714,14 @@ private fun AudioPane(
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Bookmark Name") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note / Thought (Optional)") },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -2784,6 +2793,7 @@ private fun NotesPane(
 @Composable
 private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisRepository) {
     var query by rememberSaveable { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
     val matches = remember(query, chapters) {
         if (query.length < 3) {
             emptyList()
@@ -2815,6 +2825,8 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
                     }
                 }
             },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
             label = { Text("Search") }
         )
         matches.forEach { (title, excerpt) ->
