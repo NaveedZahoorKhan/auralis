@@ -7,3 +7,6 @@
 ## 2026-08-25 - Added Clear Button to Search Field
 **Learning:** Added a clear button to a search field to improve micro-UX in Jetpack Compose, including an appropriate `contentDescription` for screen reader accessibility. It's a standard pattern that relies on existing material icons and button components.
 **Action:** When adding standard interactive elements (like clear buttons), ensure they conditionally render based on state (e.g. only show when query is not empty) and always include descriptive accessibility text for screen readers.
+## 2026-08-27 - Mobile Keyboard Optimizations for OutlinedTextField
+**Learning:** The default Android `OutlinedTextField` does not optimize the software keyboard for its context. For example, search fields will show a generic "Enter" or return key, and failing to handle `KeyboardActions` means the keyboard won't dismiss intuitively.
+**Action:** When creating text inputs on mobile, always configure `KeyboardOptions` (e.g., `imeAction = ImeAction.Search`) and `KeyboardActions` (e.g., dismissing the keyboard with `LocalFocusManager.current.clearFocus()`) to provide appropriate contextual keys and actions.
