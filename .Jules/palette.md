@@ -7,3 +7,7 @@
 ## 2026-08-25 - Added Clear Button to Search Field
 **Learning:** Added a clear button to a search field to improve micro-UX in Jetpack Compose, including an appropriate `contentDescription` for screen reader accessibility. It's a standard pattern that relies on existing material icons and button components.
 **Action:** When adding standard interactive elements (like clear buttons), ensure they conditionally render based on state (e.g. only show when query is not empty) and always include descriptive accessibility text for screen readers.
+
+## 2024-10-24 - Optimize Mobile Text Input
+**Learning:** OutlinedTextFields in Jetpack Compose default to standard keyboards, making users manually capitalize words or sentences and struggle to dismiss the keyboard after typing (like after a search query).
+**Action:** Use `keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words/Sentences, imeAction = ImeAction.Search/Next/Done)` and `keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() })` to provide immediate UX polish for forms and search bars on mobile devices.
