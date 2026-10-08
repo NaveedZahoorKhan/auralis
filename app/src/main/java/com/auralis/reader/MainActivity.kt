@@ -156,6 +156,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -1186,6 +1191,7 @@ private fun ReaderPane(
     }
 
     if (showBookmarkDialog && chapter != null) {
+        val focusManager = LocalFocusManager.current
         AlertDialog(
             onDismissRequest = { showBookmarkDialog = false },
             title = { Text("Bookmark Chapter") },
@@ -1196,13 +1202,24 @@ private fun ReaderPane(
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Label") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        )
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note (Optional)") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { focusManager.clearFocus() }
+                        )
                     )
                 }
             },
@@ -1692,6 +1709,7 @@ private fun AudioPane(
 
     if (showAddBookmarkDialog) {
         val currentChapter = chapters.firstOrNull { it.id == activeSegment?.chapterId }
+        val focusManager = LocalFocusManager.current
         AlertDialog(
             onDismissRequest = { showAddBookmarkDialog = false },
             title = { Text("Add Audio Bookmark") },
@@ -1707,13 +1725,24 @@ private fun AudioPane(
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Bookmark Name") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        )
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note / Thought (Optional)") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { focusManager.clearFocus() }
+                        )
                     )
                 }
             },
@@ -2784,6 +2813,7 @@ private fun NotesPane(
 @Composable
 private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisRepository) {
     var query by rememberSaveable { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
     val matches = remember(query, chapters) {
         if (query.length < 3) {
             emptyList()
@@ -2815,7 +2845,13 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
                     }
                 }
             },
-            label = { Text("Search") }
+            label = { Text("Search") },
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Search
+            ),
+            keyboardActions = KeyboardActions(
+                onSearch = { focusManager.clearFocus() }
+            )
         )
         matches.forEach { (title, excerpt) ->
             Text(title, fontWeight = FontWeight.SemiBold)
