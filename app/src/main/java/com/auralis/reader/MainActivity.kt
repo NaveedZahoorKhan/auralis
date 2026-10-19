@@ -126,6 +126,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -1190,18 +1195,22 @@ private fun ReaderPane(
             onDismissRequest = { showBookmarkDialog = false },
             title = { Text("Bookmark Chapter") },
             text = {
+                val focusManager = LocalFocusManager.current
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = bookmarkLabel,
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Label") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note (Optional)") },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -1696,6 +1705,7 @@ private fun AudioPane(
             onDismissRequest = { showAddBookmarkDialog = false },
             title = { Text("Add Audio Bookmark") },
             text = {
+                val focusManager = LocalFocusManager.current
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         "Track ${activeSegmentIndex + 1} • ${formatAudioTime(currentPositionMillis)}" + (currentChapter?.let { " (${it.title})" } ?: ""),
@@ -1707,12 +1717,15 @@ private fun AudioPane(
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Bookmark Name") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note / Thought (Optional)") },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -2784,6 +2797,7 @@ private fun NotesPane(
 @Composable
 private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisRepository) {
     var query by rememberSaveable { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
     val matches = remember(query, chapters) {
         if (query.length < 3) {
             emptyList()
@@ -2807,6 +2821,8 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
