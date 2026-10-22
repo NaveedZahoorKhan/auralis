@@ -7,3 +7,7 @@
 ## 2026-08-25 - Added Clear Button to Search Field
 **Learning:** Added a clear button to a search field to improve micro-UX in Jetpack Compose, including an appropriate `contentDescription` for screen reader accessibility. It's a standard pattern that relies on existing material icons and button components.
 **Action:** When adding standard interactive elements (like clear buttons), ensure they conditionally render based on state (e.g. only show when query is not empty) and always include descriptive accessibility text for screen readers.
+
+## 2026-10-22 - Redundant Screen Reader Announcements in Compose Buttons
+**Learning:** In Jetpack Compose, Icons inside Buttons that also contain text labels cause redundant screen reader announcements.
+**Action:** Nullify contentDescription on such icons to improve accessibility.

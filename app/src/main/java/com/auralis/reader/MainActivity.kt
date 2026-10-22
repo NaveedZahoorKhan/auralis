@@ -2084,7 +2084,7 @@ private fun AudioPane(
                                     showAddBookmarkDialog = true
                                 }
                             ) {
-                                Icon(Icons.Rounded.BookmarkAdd, contentDescription = "Add bookmark", modifier = Modifier.size(16.dp))
+                                Icon(Icons.Rounded.BookmarkAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Bookmark", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                             }
