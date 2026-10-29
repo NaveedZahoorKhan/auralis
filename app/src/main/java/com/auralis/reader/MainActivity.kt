@@ -2784,6 +2784,7 @@ private fun NotesPane(
 @Composable
 private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisRepository) {
     var query by rememberSaveable { mutableStateOf("") }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val matches = remember(query, chapters) {
         if (query.length < 3) {
             emptyList()
@@ -2815,7 +2816,13 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
                     }
                 }
             },
-            label = { Text("Search") }
+            label = { Text("Search") },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                imeAction = androidx.compose.ui.text.input.ImeAction.Search
+            ),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                onSearch = { focusManager.clearFocus() }
+            )
         )
         matches.forEach { (title, excerpt) ->
             Text(title, fontWeight = FontWeight.SemiBold)
