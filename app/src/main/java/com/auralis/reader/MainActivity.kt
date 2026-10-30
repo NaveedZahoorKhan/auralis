@@ -126,6 +126,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalFocusManager
+
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -2783,6 +2788,7 @@ private fun NotesPane(
 
 @Composable
 private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisRepository) {
+    val focusManager = LocalFocusManager.current
     var query by rememberSaveable { mutableStateOf("") }
     val matches = remember(query, chapters) {
         if (query.length < 3) {
@@ -2815,7 +2821,9 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
                     }
                 }
             },
-            label = { Text("Search") }
+            label = { Text("Search") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
         )
         matches.forEach { (title, excerpt) ->
             Text(title, fontWeight = FontWeight.SemiBold)
