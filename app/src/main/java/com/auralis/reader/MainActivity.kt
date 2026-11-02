@@ -183,6 +183,10 @@ import com.auralis.database.VoiceModelEntity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.content.Intent
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 
 class MainActivity : ComponentActivity() {
     private var pendingIntentUri = mutableStateOf<Uri?>(null)
@@ -2783,6 +2787,7 @@ private fun NotesPane(
 
 @Composable
 private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisRepository) {
+    val focusManager = LocalFocusManager.current
     var query by rememberSaveable { mutableStateOf("") }
     val matches = remember(query, chapters) {
         if (query.length < 3) {
@@ -2815,7 +2820,9 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
                     }
                 }
             },
-            label = { Text("Search") }
+            label = { Text("Search") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
         )
         matches.forEach { (title, excerpt) ->
             Text(title, fontWeight = FontWeight.SemiBold)
