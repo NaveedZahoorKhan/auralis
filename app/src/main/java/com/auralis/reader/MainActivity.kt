@@ -162,8 +162,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -1081,6 +1086,7 @@ private fun ReaderPane(
     onTextClicked: (String, Int) -> Unit
 ) {
     val context = LocalContext.current
+    val localFocusManager = LocalFocusManager.current
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var showChapterDropdown by remember { mutableStateOf(false) }
     var bookmarkLabel by remember { mutableStateOf("") }
@@ -1196,13 +1202,24 @@ private fun ReaderPane(
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Label") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        )
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note (Optional)") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { localFocusManager.clearFocus() }
+                        )
                     )
                 }
             },
@@ -1472,6 +1489,7 @@ private fun AudioPane(
     onPrepare: () -> Unit
 ) {
     val context = LocalContext.current
+    val localFocusManager = LocalFocusManager.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
     val maxDeviceVolume = remember { audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15 }
     var deviceVolume by remember {
@@ -1707,13 +1725,24 @@ private fun AudioPane(
                         onValueChange = { bookmarkLabel = it },
                         label = { Text("Bookmark Name") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        )
                     )
                     OutlinedTextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
                         label = { Text("Note / Thought (Optional)") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { localFocusManager.clearFocus() }
+                        )
                     )
                 }
             },
@@ -2783,6 +2812,7 @@ private fun NotesPane(
 
 @Composable
 private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisRepository) {
+    val localFocusManager = LocalFocusManager.current
     var query by rememberSaveable { mutableStateOf("") }
     val matches = remember(query, chapters) {
         if (query.length < 3) {
@@ -2815,7 +2845,9 @@ private fun SearchPane(chapters: List<ChapterEntity>, repository: AuralisReposit
                     }
                 }
             },
-            label = { Text("Search") }
+            label = { Text("Search") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { localFocusManager.clearFocus() })
         )
         matches.forEach { (title, excerpt) ->
             Text(title, fontWeight = FontWeight.SemiBold)
